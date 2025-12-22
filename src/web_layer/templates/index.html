@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}量化交易AI助手{% endblock %}
+
+{% block content %}
+<!-- 侧边导航栏 -->
+<div id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+        <button id="new-conversation" class="btn btn-primary w-100">
+            <i class="fas fa-plus me-2"></i>新建对话
+        </button>
+    </div>
+    <div class="sidebar-content">
+        <div id="conversation-list" class="conversation-list">
+            <!-- 对话列表将通过JavaScript动态加载 -->
+            <div class="conversation-placeholder text-center text-muted py-4">
+                <i class="fas fa-comments fa-2x mb-2"></i>
+                <p>点击上方按钮开始新对话</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI对话区域 -->
+<div id="chat-panel" class="chat-panel">
+    <!-- Agent状态指示器 -->
+    <div id="agent-status" class="agent-status-bar">
+        <div class="agent-status-item" data-agent="data_analyst">
+            <i class="fas fa-chart-line me-1"></i>数据分析师
+        </div>
+        <div class="agent-status-item" data-agent="risk_manager">
+            <i class="fas fa-shield-alt me-1"></i>风控官
+        </div>
+        <div class="agent-status-item" data-agent="portfolio_manager">
+            <i class="fas fa-briefcase me-1"></i>基金经理
+        </div>
+    </div>
+
+    <!-- 对话历史区域 -->
+    <div id="chat-history" class="chat-history">
+        <!-- 欢迎消息 -->
+        <div class="welcome-message text-center">
+            <div class="mb-4">
+                <i class="fas fa-robot fa-4x text-primary mb-3"></i>
+                <h3>欢迎使用量化交易AI助手</h3>
+                <p class="text-muted">
+                    我们的AI团队包含数据分析师、风控官和基金经理，<br>
+                    可以为您提供专业的投资分析和策略建议。
+                </p>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="suggestion-card" data-suggestion="分析一下茅台的投资价值">
+                        <i class="fas fa-wine-bottle text-success mb-2"></i>
+                        <h6>股票分析</h6>
+                        <p class="text-muted small">分析一下茅台的投资价值</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="suggestion-card" data-suggestion="设计一个低风险的投资策略">
+                        <i class="fas fa-chart-pie text-info mb-2"></i>
+                        <h6>策略设计</h6>
+                        <p class="text-muted small">设计一个低风险的投资策略</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="suggestion-card" data-suggestion="当前市场有哪些投资机会">
+                        <i class="fas fa-search-dollar text-warning mb-2"></i>
+                        <h6>市场机会</h6>
+                        <p class="text-muted small">当前市场有哪些投资机会</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 消息输入区域 -->
+    <div id="chat-input" class="chat-input-area">
+        <div class="input-group">
+            <input type="text" 
+                   id="message-input" 
+                   class="form-control" 
+                   placeholder="请输入您的问题..."
+                   disabled>
+            <button id="send-btn" class="btn btn-primary" disabled>
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </div>
+        <div class="input-tips text-muted small mt-2">
+            按 Enter 键发送消息，Shift + Enter 换行
+        </div>
+    </div>
+</div>
+
+<!-- 回测结果区域 -->
+<div id="results-panel" class="results-panel hidden">
+    <div class="results-header">
+        <h5 class="mb-0">
+            <i class="fas fa-chart-bar me-2"></i>回测结果
+        </h5>
+        <div class="results-actions">
+            <button id="refresh-results" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-sync-alt me-1"></i>刷新
+            </button>
+            <button id="export-pdf" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-file-pdf me-1"></i>导出
+            </button>
+        </div>
+    </div>
+    
+    <div class="results-content">
+        <!-- 结果概览面板 -->
+        <div id="performance-summary" class="performance-summary">
+            <div class="row g-3 mb-4">
+                <div class="col-6">
+                    <div class="metric-card">
+                        <div class="metric-value" id="total-return">--</div>
+                        <div class="metric-label">总收益率</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="metric-card">
+                        <div class="metric-value" id="sharpe-ratio">--</div>
+                        <div class="metric-label">夏普比率</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="metric-card">
+                        <div class="metric-value" id="max-drawdown">--</div>
+                        <div class="metric-label">最大回撤</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="metric-card">
+                        <div class="metric-value" id="win-rate">--</div>
+                        <div class="metric-label">胜率</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 图表区域 -->
+        <div id="charts-container" class="charts-container">
+            <div class="chart-item mb-4">
+                <h6>收益率曲线</h6>
+                <canvas id="equity-chart" width="400" height="200"></canvas>
+            </div>
+            <div class="chart-item mb-4">
+                <h6>回撤图</h6>
+                <canvas id="drawdown-chart" width="400" height="200"></canvas>
+            </div>
+        </div>
+        
+        <!-- 数据表格区域 -->
+        <div id="tables-container" class="tables-container">
+            <div class="table-item mb-4">
+                <h6>关键指标</h6>
+                <div class="table-responsive">
+                    <table id="metrics-table" class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>指标</th>
+                                <th>数值</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 动态加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="table-item">
+                <h6>交易记录</h6>
+                <div class="table-responsive">
+                    <table id="trades-table" class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>股票</th>
+                                <th>操作</th>
+                                <th>价格</th>
+                                <th>数量</th>
+                                <th>收益</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 动态加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% endblock %}

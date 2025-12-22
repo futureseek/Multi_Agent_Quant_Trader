@@ -1,0 +1,51 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ 
+# === C++ ===
+# 编译产物
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.i
+*.s
+*.ko
+*.elf
+*.dSYM/
+ 
+# 常见构建目录
+build/
+cmake-build-*/
+out/
+bin/
+lib/
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lai
+*.la
+*.lo
+ 
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+
+# 密钥
+
+api_config.json
