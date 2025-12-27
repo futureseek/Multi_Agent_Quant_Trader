@@ -1,5 +1,30 @@
 # Multi-Agent Quant Trader: 基于 LangGraph 与高性能 C++ 引擎的混合架构交易系统
 
+
+## 启动需要
+密钥都是写在文件中，所以干脆都没有添加到git推送上去，需要在根目录下创建config目录，config目录下创建
+api_config.json文件，写入以下内容：
+```json
+{
+  "tushare_api": "",
+  "model": {
+    "handler_agent":{
+      "model_name": "",
+      "api_key": "",
+      "base_url": ""
+    },
+    "strategy_agent":{
+      "model_name": "",
+      "api_key": "",
+      "base_url": ""
+    }
+  }
+}
+
+```
+
+
+
 > **2025 本科毕业设计课题** 
 
 随着金融科技（FinTech）的发展，量化交易正从“数据挖掘”向“AI 智能决策”演进。目前的 AI 交易研究普遍存在两大痛点：
