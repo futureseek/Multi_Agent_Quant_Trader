@@ -210,60 +210,107 @@ body {
 
 /* 消息样式 */
 .message {
-    margin-bottom: 1rem;
     display: flex;
-    gap: 0.75rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    animation: fadeInUp 0.3s ease-out;
 }
 
 .message.user {
-    justify-content: flex-end;
+    flex-direction: row-reverse;
+}
+
+.message.error .message-avatar {
+    background: #dc3545 !important;
 }
 
 .message-avatar {
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.8rem;
-    color: white;
+    margin: 0 10px;
     flex-shrink: 0;
 }
 
 .message-avatar.user {
-    background: var(--primary-color);
-}
-
-.message-avatar.assistant {
-    background: var(--success-color);
-}
-
-.message-content {
-    max-width: 70%;
-    padding: 0.75rem 1rem;
-    border-radius: 12px;
-    background: white;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    word-wrap: break-word;
-}
-
-.message.user .message-content {
-    background: var(--primary-color);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
 }
 
-.message-time {
-    font-size: 0.7rem;
-    color: var(--secondary-color);
-    margin-top: 0.25rem;
+.message-avatar.assistant {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
 }
 
-/* 输入区域 */
-.chat-input-area {
-    padding: 1rem;
-    background: white;
-    border-top: 1px solid var(--border-color);
+.message-content {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 18px;
+    max-width: 70%;
+    position: relative;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.message.user .message-content {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.message.error .message-content {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.message-meta {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.agent-badge {
+    background: #007bff;
+    color: white;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.intent-badge {
+    background: #6c757d;
+    color: white;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.message-text {
+    line-height: 1.5;
+}
+
+.message-text.error-text {
+    color: #721c24;
+}
+
+.message-time {
+    font-size: 0.75rem;
+    color: #6c757d;
+    margin-top: 8px;
+    text-align: right;
+}
+
+.message.user .message-time {
+    color: rgba(255,255,255,0.8);
+}
+
+.message.error .message-time {
+    color: #856404;
 }
 
 .input-tips {

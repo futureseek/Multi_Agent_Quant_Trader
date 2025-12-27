@@ -6,6 +6,8 @@
 ```bash
 conda activate MAtrader
 cd /home/ligenghao/Multi_Agent_Quant_Trader/src/web_layer
+conda create -n MAtrader python=3.10 -y
+conda activate MAtrader 
 pip install -r requirements.txt
 ```
 

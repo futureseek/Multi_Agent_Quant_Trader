@@ -286,16 +286,24 @@ class QuantTraderApp {
 
             const data = await response.json();
             
-            if (data.message_id) {
-                // 模拟AI回复（实际应用中通过WebSocket接收）
-                setTimeout(() => {
-                    this.displayMessage({
-                        role: 'assistant',
-                        agent_type: 'data_analyst',
-                        content: '感谢您的问题！我正在分析相关数据，请稍等片刻...',
-                        timestamp: new Date().toISOString()
-                    });
-                }, 1000);
+            if (data.success && data.ai_response) {
+                // 显示真实的AI回复
+                this.displayMessage({
+                    role: 'assistant',
+                    content: data.ai_response.content,
+                    timestamp: data.ai_response.timestamp,
+                    agent: data.ai_response.agent,
+                    intent: data.ai_response.intent
+                });
+            } else if (data.error) {
+                // 显示错误信息
+                this.showError(data.error);
+                this.displayMessage({
+                    role: 'assistant',
+                    content: '抱歉，处理您的消息时遇到了问题：' + data.error,
+                    timestamp: new Date().toISOString(),
+                    is_error: true
+                });
             }
 
         } catch (error) {
@@ -315,18 +323,39 @@ class QuantTraderApp {
         }
 
         const messageElement = document.createElement('div');
-        messageElement.className = `message ${message.role} ${animate ? 'fade-in' : ''}`;
-
         const isUser = message.role === 'user';
-        const avatarIcon = isUser ? 'fas fa-user' : 'fas fa-robot';
+        const isError = message.is_error === true;
+        
+        // 设置消息样式类
+        let messageClasses = `message ${message.role}`;
+        if (animate) messageClasses += ' fade-in';
+        if (isError) messageClasses += ' error';
+        
+        messageElement.className = messageClasses;
+
+        const avatarIcon = isUser ? 'fas fa-user' : (isError ? 'fas fa-exclamation-triangle' : 'fas fa-robot');
         const avatarClass = isUser ? 'user' : 'assistant';
 
+        // 为AI消息添加Agent标识和意图标签
+        let agentBadge = '';
+        if (!isUser && message.agent) {
+            const agentName = message.agent === 'handler_agent' ? '智能助手' : message.agent;
+            const intentName = this.getIntentDisplayName(message.intent);
+            agentBadge = `
+                <div class="message-meta">
+                    <span class="agent-badge">${agentName}</span>
+                    ${intentName ? `<span class="intent-badge">${intentName}</span>` : ''}
+                </div>
+            `;
+        }
+
         messageElement.innerHTML = `
-            ${!isUser ? `<div class="message-avatar ${avatarClass}">
+            ${!isUser ? `<div class="message-avatar ${avatarClass} ${isError ? 'error' : ''}">
                 <i class="${avatarIcon}"></i>
             </div>` : ''}
             <div class="message-content">
-                ${message.content}
+                ${agentBadge}
+                <div class="message-text ${isError ? 'error-text' : ''}">${message.content}</div>
                 <div class="message-time">${this.formatTime(message.timestamp)}</div>
             </div>
             ${isUser ? `<div class="message-avatar ${avatarClass}">
@@ -336,6 +365,33 @@ class QuantTraderApp {
 
         elements.chatHistory.appendChild(messageElement);
         elements.chatHistory.scrollTop = elements.chatHistory.scrollHeight;
+
+        // 如果是AI消息，添加打字机效果
+        if (!isUser && animate && !isError) {
+            this.addTypingEffect(messageElement);
+        }
+    }
+
+    // 获取意图显示名称
+    getIntentDisplayName(intent) {
+        const intentMap = {
+            'investment_analysis': '投资分析',
+            'risk_analysis': '风险分析', 
+            'strategy_analysis': '策略分析',
+            'general_question': '通用问答'
+        };
+        return intentMap[intent] || null;
+    }
+
+    // 添加打字机效果
+    addTypingEffect(messageElement) {
+        const messageText = messageElement.querySelector('.message-text');
+        if (!messageText) return;
+
+        messageText.style.opacity = '0.8';
+        setTimeout(() => {
+            messageText.style.opacity = '1';
+        }, 300);
     }
 
     // 格式化时间
