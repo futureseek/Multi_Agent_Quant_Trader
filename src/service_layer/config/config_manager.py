@@ -24,23 +24,47 @@ class ConfigManager:
             config_path = project_root / "config" / "api_config.json"
         
         self.config_path = Path(config_path)
+        
+        # 设置prompt配置文件路径
+        project_root = Path(__file__).parent.parent.parent.parent
+        self.prompt_config_path = project_root / "config" / "prompt_config.json"
+        
         self._config_data = None
+        self._prompt_config_data = None
         self.load_config()
     
     def load_config(self) -> None:
         """加载配置文件"""
         try:
+            # 加载API配置
             if not self.config_path.exists():
                 raise FileNotFoundError(f"配置文件不存在: {self.config_path}")
             
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 self._config_data = json.load(f)
             
-            print(f"✅ 配置文件加载成功: {self.config_path}")
+            print(f"✅ API配置文件加载成功: {self.config_path}")
+            
+            # 加载Prompt配置（可选）
+            self._load_prompt_config()
             
         except Exception as e:
             print(f"❌ 配置文件加载失败: {e}")
             raise
+    
+    def _load_prompt_config(self) -> None:
+        """加载Prompt配置文件"""
+        try:
+            if self.prompt_config_path.exists():
+                with open(self.prompt_config_path, 'r', encoding='utf-8') as f:
+                    self._prompt_config_data = json.load(f)
+                print(f"✅ Prompt配置文件加载成功: {self.prompt_config_path}")
+            else:
+                print(f"⚠️  Prompt配置文件不存在: {self.prompt_config_path}")
+                self._prompt_config_data = {}
+        except Exception as e:
+            print(f"⚠️  Prompt配置文件加载失败: {e}，将使用默认配置")
+            self._prompt_config_data = {}
     
     def get_model_config(self, agent_name: str) -> Dict[str, Any]:
         """
@@ -102,6 +126,37 @@ class ConfigManager:
         except Exception as e:
             print(f"❌ 配置验证过程中出错: {e}")
             return False
+    
+    def get_prompt_config(self, agent_name: str) -> str:
+        """
+        获取指定Agent的系统提示词
+        
+        Args:
+            agent_name: Agent名称 (如: handler_agent, strategy_agent)
+            
+        Returns:
+            系统提示词字符串
+        """
+        # 如果prompt配置不存在，返回默认提示词
+        if not self._prompt_config_data:
+            return self._get_default_prompt(agent_name)
+        
+        # 从配置中获取提示词
+        agent_prompt = self._prompt_config_data.get(agent_name)
+        
+        if agent_prompt:
+            return agent_prompt
+        else:
+            print(f"⚠️  未找到Agent '{agent_name}' 的prompt配置，使用默认配置")
+            return self._get_default_prompt(agent_name)
+    
+    def _get_default_prompt(self, agent_name: str) -> str:
+        """获取默认提示词"""
+        default_prompts = {
+            "handler_agent": "你是一个专业的量化投资AI助手。你的任务是帮助用户进行投资分析、策略制定和风险评估。请以专业、友好的态度回应用户的问题。"
+        }
+        
+        return default_prompts.get(agent_name, "你是一个AI助手，请帮助用户解决问题。")
     
     def get_all_config(self) -> Dict[str, Any]:
         """获取完整配置数据"""

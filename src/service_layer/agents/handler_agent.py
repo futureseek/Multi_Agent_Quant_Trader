@@ -30,8 +30,11 @@ class HandlerAgent:
     
     def __init__(self):
         """初始化HandlerAgent"""
+        # Agent名称
+        self.name = "handler_agent"
+        
         # 获取配置信息
-        agent_config = config_manager.get_model_config("handler_agent")
+        agent_config = config_manager.get_model_config(self.name)
         
         # 直接使用LangChain的ChatOpenAI
         self.llm = ChatOpenAI(
@@ -43,6 +46,9 @@ class HandlerAgent:
         
         # 初始化内存checkpointer
         self.checkpointer = InMemorySaver()
+        
+        # 获取系统提示词
+        self.system_prompt = config_manager.get_prompt_config(self.name)
         
         self.graph = self._build_graph()
         print(f"✅ HandlerAgent 初始化完成 - 模型: {agent_config['model_name']}")
@@ -76,9 +82,7 @@ class HandlerAgent:
             # 更新状态
             state["current_step"] = "parsing_input"
             state["messages"] = [
-                SystemMessage(content="""你是一个专业的量化投资AI助手。
-                你的任务是帮助用户进行投资分析、策略制定和风险评估。
-                请以专业、友好的态度回应用户的问题。"""),
+                SystemMessage(content=self.system_prompt),
                 HumanMessage(content=state["user_input"])
             ]
             
@@ -288,6 +292,25 @@ class HandlerAgent:
                     "agent": "handler_agent"
                 }
             }
+    
+    async def test_workflow(self) -> bool:
+        """测试工作流是否正常"""
+        try:
+            test_result = await self.process_message(
+                user_input="你好，请做一个简单的自我介绍。",
+                conversation_id="test_conversation"
+            )
+            
+            if test_result["success"]:
+                print("✅ HandlerAgent工作流测试成功")
+                return True
+            else:
+                print(f"❌ HandlerAgent工作流测试失败: {test_result.get('error')}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ HandlerAgent工作流测试异常: {e}")
+            return False
 
 # 全局HandlerAgent实例
 handler_agent = HandlerAgent()
