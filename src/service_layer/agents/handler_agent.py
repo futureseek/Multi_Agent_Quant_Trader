@@ -14,6 +14,7 @@ from langchain_openai import ChatOpenAI
 from typing_extensions import Annotated, TypedDict
 
 from ..config.config_manager import config_manager
+from .message_manager import MessageManager
 
 class AgentState(TypedDict):
     """Agent状态定义"""
@@ -49,6 +50,9 @@ class HandlerAgent:
         
         # 获取系统提示词
         self.system_prompt = config_manager.get_prompt_config(self.name)
+        
+        # 初始化消息管理器
+        self.message_manager = MessageManager()
         
         self.graph = self._build_graph()
         print(f"✅ HandlerAgent 初始化完成 - 模型: {agent_config['model_name']}")
@@ -144,19 +148,28 @@ class HandlerAgent:
                 system_prompt = """你是一个友好的AI助手，专注于金融投资领域。
                 请根据用户问题和之前的对话历史提供有用的信息和建议，保持对话的连贯性。"""
             
-            # 构建消息列表 - 使用状态中的messages，这包含了历史对话
-            messages = [SystemMessage(content=system_prompt)] + state["messages"]
+            # 构建消息列表 - 使用MessageManager优化消息历史
+            raw_messages = [SystemMessage(content=system_prompt)] + state["messages"]
             
-            # 调试输出：显示消息数量和最近的几条消息
-            print(f"📝 对话历史包含 {len(state['messages'])} 条消息")
-            if len(state["messages"]) > 1:
-                print(f"💭 检测到历史对话，将基于上下文生成回复")
+            # 使用MessageManager优化消息列表
+            optimized_messages = self.message_manager.optimize_messages(raw_messages)
+            
+            # 调试输出：显示优化后的消息统计
+            stats = self.message_manager.get_stats(optimized_messages)
+            print(f"📊 消息统计: {stats['total_messages']}条消息, {stats['total_tokens']}个tokens")
+            print(f"   👤用户: {stats['user_messages']}条, 🤖AI: {stats['ai_messages']}条, ⚙️系统: {stats['system_messages']}条")
+            
+            if len(optimized_messages) > 1:
+                print(f"💭 检测到历史对话，将基于优化后的上下文生成回复")
                 # 显示最近几条消息的简要内容
-                recent_messages = state["messages"][-3:] if len(state["messages"]) > 3 else state["messages"]
+                recent_messages = optimized_messages[-3:] if len(optimized_messages) > 3 else optimized_messages
                 for i, msg in enumerate(recent_messages):
-                    msg_type = "👤用户" if isinstance(msg, HumanMessage) else "🤖AI"
-                    content = msg.content[:50] + "..." if len(msg.content) > 50 else msg.content
+                    msg_type = "👤用户" if isinstance(msg, HumanMessage) else "🤖AI" if isinstance(msg, AIMessage) else "⚙️系统"
+                    content = str(msg.content)[:50] + "..." if len(str(msg.content)) > 50 else str(msg.content)
                     print(f"  {msg_type}: {content}")
+            
+            # 使用优化后的消息列表
+            messages = optimized_messages
             
             print(f"🚀 开始调用模型...")
             

@@ -269,8 +269,12 @@ class QuantTraderApp {
                 timestamp: new Date().toISOString()
             });
 
-            // 清空输入框
+            // 清空输入框并禁用输入
             elements.messageInput.value = '';
+            this.disableInputTemporarily();
+
+            // 显示思考中状态
+            const thinkingMessageId = this.displayThinkingMessage();
 
             // 发送到服务器
             const response = await fetch('/api/messages/send', {
@@ -285,6 +289,12 @@ class QuantTraderApp {
             });
 
             const data = await response.json();
+            
+            // 移除思考中状态
+            this.removeThinkingMessage(thinkingMessageId);
+            
+            // 重新启用输入
+            this.enableInput();
             
             if (data.success && data.ai_response) {
                 // 显示真实的AI回复
@@ -309,6 +319,13 @@ class QuantTraderApp {
         } catch (error) {
             console.error('发送消息失败:', error);
             this.showError('发送消息失败');
+            
+            // 出错时也要移除思考状态并重新启用输入
+            const thinkingElement = document.querySelector('.thinking-message');
+            if (thinkingElement) {
+                thinkingElement.remove();
+            }
+            this.enableInput();
         }
     }
 
@@ -429,6 +446,69 @@ class QuantTraderApp {
         }
         if (elements.sendBtn) {
             elements.sendBtn.disabled = true;
+        }
+    }
+
+    // 临时禁用输入（发送消息时）
+    disableInputTemporarily() {
+        if (elements.messageInput) {
+            elements.messageInput.disabled = true;
+            elements.messageInput.placeholder = 'AI正在思考中...';
+        }
+        if (elements.sendBtn) {
+            elements.sendBtn.disabled = true;
+        }
+    }
+
+    // 显示思考中消息
+    displayThinkingMessage() {
+        if (!elements.chatHistory) return null;
+
+        const thinkingMessageId = 'thinking-' + Date.now();
+        const thinkingElement = document.createElement('div');
+        thinkingElement.className = 'message assistant thinking-message fade-in';
+        thinkingElement.id = thinkingMessageId;
+
+        thinkingElement.innerHTML = `
+            <div class="message-avatar assistant">
+                <i class="fas fa-robot"></i>
+            </div>
+            <div class="message-content">
+                <div class="message-meta">
+                    <span class="agent-badge">智能助手</span>
+                    <span class="thinking-indicator">思考中</span>
+                </div>
+                <div class="message-text thinking-text">
+                    <div class="thinking-dots">
+                        <span>正在分析您的问题</span>
+                        <div class="dots">
+                            <span class="dot"></span>
+                            <span class="dot"></span>
+                            <span class="dot"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="message-time">${this.formatTime(new Date().toISOString())}</div>
+            </div>
+        `;
+
+        elements.chatHistory.appendChild(thinkingElement);
+        elements.chatHistory.scrollTop = elements.chatHistory.scrollHeight;
+
+        return thinkingMessageId;
+    }
+
+    // 移除思考中消息
+    removeThinkingMessage(thinkingMessageId) {
+        if (!thinkingMessageId) return;
+        
+        const thinkingElement = document.getElementById(thinkingMessageId);
+        if (thinkingElement) {
+            // 添加淡出效果
+            thinkingElement.style.opacity = '0.5';
+            setTimeout(() => {
+                thinkingElement.remove();
+            }, 200);
         }
     }
 
