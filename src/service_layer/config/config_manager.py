@@ -74,7 +74,7 @@ class ConfigManager:
             agent_name: Agent名称 (如: handler_agent, strategy_agent)
             
         Returns:
-            模型配置字典
+            模型配置字典，只包含ChatOpenAI支持的参数
         """
         if not self._config_data:
             raise RuntimeError("配置文件未加载")
@@ -91,7 +91,16 @@ class ConfigManager:
             if field not in agent_config:
                 raise ValueError(f"Agent '{agent_name}' 缺少必要配置字段: {field}")
         
-        return agent_config
+        # 只返回ChatOpenAI支持的参数，过滤掉无效参数
+        valid_config = {
+            "model_name": agent_config["model_name"],
+            "api_key": agent_config["api_key"],
+            "base_url": agent_config["base_url"]
+        }
+
+
+        
+        return valid_config
     
     def get_tushare_config(self) -> str:
         """获取Tushare API配置"""

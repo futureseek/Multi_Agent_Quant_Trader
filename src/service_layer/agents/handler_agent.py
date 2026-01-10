@@ -8,13 +8,14 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.memory import MemorySaver as InMemorySaver
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from typing_extensions import Annotated, TypedDict
 
 from ..config.config_manager import config_manager
 from .message_manager import MessageManager
+from .data_service_agent import data_service_agent
 
 class AgentState(TypedDict):
     """Agent状态定义"""
@@ -23,6 +24,9 @@ class AgentState(TypedDict):
     conversation_id: str
     current_step: str
     analysis_result: Optional[str]
+    needs_data: Optional[bool]
+    data_request: Optional[str]
+    fetched_data: Optional[Dict[str, Any]]
     final_response: Optional[str]
     error: Optional[str]
 
@@ -35,16 +39,14 @@ class HandlerAgent:
         self.name = "handler_agent"
         
         # 获取配置信息
+        print(self.name)
         agent_config = config_manager.get_model_config(self.name)
-        
-        # 直接使用LangChain的ChatOpenAI
         self.llm = ChatOpenAI(
             model=agent_config["model_name"],
-            api_key=agent_config["api_key"],
-            base_url=agent_config["base_url"],
+            openai_api_key=agent_config["api_key"],
+            openai_api_base=agent_config["base_url"],
             temperature=0.7
         )
-        
         # 初始化内存checkpointer
         self.checkpointer = InMemorySaver()
         
@@ -64,17 +66,29 @@ class HandlerAgent:
         # 添加节点
         workflow.add_node("parse_input", self._parse_input_node)
         workflow.add_node("analyze_intent", self._analyze_intent_node)
+        workflow.add_node("check_data_need", self._check_data_need_node)
+        workflow.add_node("fetch_data", self._fetch_data_node)
         workflow.add_node("generate_response", self._generate_response_node)
         workflow.add_node("format_output", self._format_output_node)
-        workflow.add_node("handle_error", self._handle_error_node)
         
         # 定义流程
         workflow.add_edge(START, "parse_input")
         workflow.add_edge("parse_input", "analyze_intent")
-        workflow.add_edge("analyze_intent", "generate_response")
+        workflow.add_edge("analyze_intent", "check_data_need")
+        
+        # 条件分支：根据是否需要数据决定路径
+        workflow.add_conditional_edges(
+            "check_data_need",
+            self._should_fetch_data,
+            {
+                "fetch_data": "fetch_data",
+                "generate_response": "generate_response"
+            }
+        )
+        
+        workflow.add_edge("fetch_data", "generate_response")
         workflow.add_edge("generate_response", "format_output")
         workflow.add_edge("format_output", END)
-        workflow.add_edge("handle_error", END)
         
         return workflow.compile(checkpointer=self.checkpointer)
     
@@ -124,6 +138,120 @@ class HandlerAgent:
         except Exception as e:
             print(f"❌ 意图分析失败: {e}")
             state["error"] = f"意图分析失败: {str(e)}"
+            return state
+    
+    async def _check_data_need_node(self, state: AgentState) -> AgentState:
+        """智能检查是否需要数据节点"""
+        try:
+            print("🤖 AI智能判断是否需要获取数据...")
+            state["current_step"] = "checking_data_need"
+            
+            # 构建AI判断提示词
+            judge_prompt = f"""
+你是一个专业的投资分析助手。请判断用户的以下问题是否需要获取实时股票数据来进行回答。
+
+用户问题："{state['user_input']}"
+
+判断标准：
+1. 如果问题涉及具体股票的价格、行情、K线数据、技术分析等，需要数据
+2. 如果问题涉及某只股票的历史表现、走势分析等，需要数据  
+3. 如果是一般性的投资理论、概念解释、策略讨论等，不需要数据
+4. 如果是问候、介绍等日常对话，不需要数据
+
+请只回答"YES"（需要数据）或"NO"（不需要数据），并简要说明理由。
+
+回答格式：
+判断：YES/NO
+理由：[简要说明]
+数据需求：[如果需要数据，说明需要什么类型的数据]
+"""
+            
+            # 调用AI进行判断
+            judge_message = [SystemMessage(content=judge_prompt)]
+            response = await self.llm.ainvoke(judge_message)
+            judge_result = response.content
+            
+            print(f"🧠 AI判断结果: {judge_result}")
+            
+            # 解析AI的判断结果
+            needs_data = "YES" in judge_result.upper()
+            state["needs_data"] = needs_data
+            
+            if needs_data:
+                state["data_request"] = state["user_input"]
+                print(f"📊 AI判断需要获取数据")
+            else:
+                print("💭 AI判断不需要获取数据，直接生成回复")
+            
+            # 将AI判断结果添加到状态中，供调试使用
+            state["ai_judgment"] = judge_result
+            
+            return state
+            
+        except Exception as e:
+            print(f"❌ AI数据需求判断失败: {e}")
+            # 如果AI判断失败，回退到安全的关键词检查
+            print("🔄 回退到关键词检查模式...")
+            user_input = state["user_input"].lower()
+            data_keywords = ["股票", "股价", "行情", "k线", "价格", "涨跌", "000001", "600000"]
+            needs_data = any(keyword in user_input for keyword in data_keywords)
+            state["needs_data"] = needs_data
+            state["data_request"] = state["user_input"] if needs_data else ""
+            return state
+    
+    def _should_fetch_data(self, state: AgentState) -> str:
+        """判断是否应该获取数据的条件函数"""
+        needs_data = state.get("needs_data", False)
+        print(f"🎯 路由决策: {'获取数据' if needs_data else '直接回复'}")
+        return "fetch_data" if needs_data else "generate_response"
+    
+    async def _fetch_data_node(self, state: AgentState) -> AgentState:
+        """数据获取节点"""
+        try:
+            print("📈 开始获取数据...")
+            state["current_step"] = "fetching_data"
+            
+            data_request = state.get("data_request", "")
+            conversation_id = state.get("conversation_id", "")
+            
+            # 调用DataServiceAgent获取数据
+            print(f"🔌 调用DataServiceAgent...")
+            data_result = await data_service_agent.think_and_respond(
+                handler_instruction=data_request,
+                conversation_id=conversation_id
+            )
+            
+            if data_result["success"]:
+                state["fetched_data"] = data_result
+                print(f"✅ 数据获取成功")
+                
+                # 将数据信息添加到消息中，供后续生成回复使用
+                data_content = data_result.get('content', '')
+                if len(data_content) > 500:
+                    data_summary = data_content[:500] + "..."
+                else:
+                    data_summary = data_content
+                    
+                data_message = f"\n[💰 已获取到相关数据]: {data_summary}"
+                state["messages"].append(SystemMessage(content=data_message))
+                
+            else:
+                print(f"⚠️ 数据获取失败: {data_result['message']}")
+                state["fetched_data"] = data_result
+                error_msg = f"\n[⚠️ 数据服务提示]: {data_result['message']}"
+                state["messages"].append(SystemMessage(content=error_msg))
+            
+            return state
+            
+        except Exception as e:
+            print(f"❌ 数据获取异常: {e}")
+            # 数据获取失败不应该中断整个流程
+            state["fetched_data"] = {
+                "success": False,
+                "message": f"数据服务异常: {str(e)}"
+            }
+            error_msg = f"\n[❌ 数据服务异常]: 暂时无法获取数据，将基于已有知识回答"
+            state["messages"].append(SystemMessage(content=error_msg))
             return state
     
     async def _generate_response_node(self, state: AgentState) -> AgentState:
@@ -212,20 +340,6 @@ class HandlerAgent:
             state["error"] = f"输出格式化失败: {str(e)}"
             return state
     
-    async def _handle_error_node(self, state: AgentState) -> AgentState:
-        """错误处理节点"""
-        error_msg = state.get("error", "未知错误")
-        print(f"🚨 处理错误: {error_msg}")
-        
-        state["final_response"] = {
-            "content": "抱歉，处理您的请求时出现了问题。请稍后重试或联系技术支持。",
-            "error": error_msg,
-            "timestamp": datetime.now().isoformat(),
-            "conversation_id": state.get("conversation_id", ""),
-            "agent": "handler_agent"
-        }
-        
-        return state
     
     async def process_message(self, 
                              user_input: str, 
@@ -259,6 +373,9 @@ class HandlerAgent:
                 "conversation_id": conversation_id,
                 "current_step": "initialized",
                 "analysis_result": None,
+                "needs_data": None,
+                "data_request": None,
+                "fetched_data": None,
                 "final_response": None,
                 "error": None
             }
