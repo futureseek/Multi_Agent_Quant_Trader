@@ -367,17 +367,14 @@ class QuantTraderApp {
         }
 
         messageElement.innerHTML = `
-            ${!isUser ? `<div class="message-avatar ${avatarClass} ${isError ? 'error' : ''}">
+            <div class="message-avatar ${avatarClass} ${isError ? 'error' : ''}">
                 <i class="${avatarIcon}"></i>
-            </div>` : ''}
+            </div>
             <div class="message-content">
                 ${agentBadge}
                 <div class="message-text ${isError ? 'error-text' : ''}">${message.content}</div>
                 <div class="message-time">${this.formatTime(message.timestamp)}</div>
             </div>
-            ${isUser ? `<div class="message-avatar ${avatarClass}">
-                <i class="${avatarIcon}"></i>
-            </div>` : ''}
         `;
 
         elements.chatHistory.appendChild(messageElement);
