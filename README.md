@@ -2,7 +2,7 @@
 
 
 ## 启动需要
-密钥都是写在文件中，所以干脆都没有添加到git推送上去，需要在根目录下创建config目录，config目录下创建
+密钥都是写在文件中，所以干脆都没有添加到git推送上去，需要在config目录下创建
 api_config.json文件，写入以下内容：
 ```json
 {
@@ -14,6 +14,11 @@ api_config.json文件，写入以下内容：
       "base_url": ""
     },
     "strategy_agent":{
+      "model_name": "",
+      "api_key": "",
+      "base_url": ""
+    },
+    "data_service_agent":{
       "model_name": "",
       "api_key": "",
       "base_url": ""

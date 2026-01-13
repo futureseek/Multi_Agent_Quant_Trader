@@ -15,6 +15,8 @@ from langchain_core.tools import tool
 
 from ..config.config_manager import config_manager
 from ..tools.daily_data_tool import get_daily_stock_data
+from ..tools.adj_factor_tool import get_adj_factor
+from ..tools.daily_basic_tool import get_daily_basic
 from .message_manager import MessageManager
 
 
@@ -48,7 +50,11 @@ class DataServiceAgent:
         )
         
         # 初始化工具列表
-        self.tools = [get_daily_stock_data]
+        self.tools = [
+            get_daily_stock_data,      # 日K线数据
+            get_adj_factor,           # 复权因子
+            get_daily_basic           # 日指标数据
+        ]
         
         # 创建提示词模板
         self.prompt_template = ChatPromptTemplate.from_messages([
@@ -68,7 +74,7 @@ class DataServiceAgent:
         self.executor = AgentExecutor(
             agent=self.agent,
             tools=self.tools,
-            verbose=True,
+            verbose=False,  # 关闭verbose避免回调错误
             handle_parsing_errors=True,
             max_iterations=3,  # 限制迭代次数，避免无限循环
             return_intermediate_steps=True  # 返回中间步骤，便于调试
@@ -234,53 +240,7 @@ class DataServiceAgent:
             "langchain_version": "0.2.x"
         }
     
-    async def test_functionality(self) -> bool:
-        """测试Agent功能是否正常"""
-        try:
-            print(f"🧪 开始测试DataServiceAgent功能...")
-            
-            # 测试数据请求
-            test_request = "请获取平安银行(000001.SZ)最近5天的日K线数据"
-            result = await self.process_data_request(
-                request=test_request,
-                conversation_id="test_conversation"
-            )
-            
-            if result["success"]:
-                print(f"✅ DataServiceAgent功能测试成功")
-                print(f"📊 返回内容长度: {len(result['content'])}")
-                return True
-            else:
-                print(f"❌ DataServiceAgent功能测试失败: {result['message']}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ DataServiceAgent功能测试异常: {e}")
-            return False
-    
-    async def test_thinking_capability(self) -> bool:
-        """测试思考能力"""
-        try:
-            print(f"🧠 开始测试DataServiceAgent思考能力...")
-            
-            # 测试接收HandlerAgent指令的能力
-            test_instruction = "用户想了解万科A股票的最近表现，请获取相关数据"
-            result = await self.think_and_respond(
-                handler_instruction=test_instruction,
-                conversation_id="test_thinking"
-            )
-            
-            if result["success"]:
-                print(f"✅ DataServiceAgent思考能力测试成功")
-                print(f"🤔 思考过程: {result.get('thinking_process', {}).get('analysis', 'N/A')}")
-                return True
-            else:
-                print(f"❌ DataServiceAgent思考能力测试失败: {result['message']}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ DataServiceAgent思考能力测试异常: {e}")
-            return False
+ 
 
 
 # 全局DataServiceAgent实例
