@@ -1,7 +1,7 @@
 """
 DataServiceAgent - 数据服务智能体
 负责处理所有金融数据获取请求，提供高效的数据服务
-使用LangChain 0.2版本的现代化实现
+使用LangChain 0.1.x兼容版本
 """
 
 import asyncio
@@ -9,9 +9,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langchain.agents import create_tool_calling_agent, AgentExecutor
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import tool
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.agents import AgentExecutor, create_tool_calling_agent
 
 from ..config.config_manager import config_manager
 from ..tools.daily_data_tool import get_daily_stock_data
@@ -22,67 +21,67 @@ from .message_manager import MessageManager
 
 class DataServiceAgent:
     """数据服务智能体 - 专门负责金融数据获取和处理"""
-    
+
     def __init__(self):
         """初始化DataServiceAgent"""
         # Agent名称
         self.name = "data_service_agent"
-        
+
         # 获取配置信息
         agent_config = config_manager.get_model_config(self.name)
-        
+
         # 初始化LLM - 使用明确的参数名称避免proxies问题
         self.llm = ChatOpenAI(
             model=agent_config["model_name"],
-            openai_api_key=agent_config["api_key"], 
+            openai_api_key=agent_config["api_key"],
             openai_api_base=agent_config["base_url"],
             temperature=0.1,  # 数据服务需要更准确，温度设低一点
             max_tokens=2000
         )
-        
+
         # 获取系统提示词
         self.system_prompt = config_manager.get_prompt_config(self.name)
-        
+
         # 初始化消息管理器
         self.message_manager = MessageManager(
             max_messages=50,   # 数据服务对话相对简单，减少消息数
             max_tokens=8000    # 减少token使用量
         )
-        
+
         # 初始化工具列表
         self.tools = [
             get_daily_stock_data,      # 日K线数据
             get_adj_factor,           # 复权因子
             get_daily_basic           # 日指标数据
         ]
-        
+
         # 创建提示词模板
         self.prompt_template = ChatPromptTemplate.from_messages([
             ("system", self.system_prompt),
             ("human", "{input}"),
             ("placeholder", "{agent_scratchpad}")
         ])
-        
+
         # 创建工具调用Agent
         self.agent = create_tool_calling_agent(
             llm=self.llm,
             tools=self.tools,
             prompt=self.prompt_template
         )
-        
-        # 创建Agent执行器 - 使用0.2版本的配置
+
+        # 创建Agent执行器
         self.executor = AgentExecutor(
             agent=self.agent,
             tools=self.tools,
-            verbose=False,  # 关闭verbose避免回调错误
+            verbose=True,  # 开启详细日志
             handle_parsing_errors=True,
-            max_iterations=3,  # 限制迭代次数，避免无限循环
-            return_intermediate_steps=True  # 返回中间步骤，便于调试
+            max_iterations=3,
+            return_intermediate_steps=True
         )
-        
+
         # 会话缓存
         self.session_cache = {}
-        
+
         print(f"✅ DataServiceAgent 初始化完成 - 模型: {agent_config['model_name']}")
         print(f"📊 可用数据工具: {[tool.name for tool in self.tools]}")
     
@@ -111,14 +110,35 @@ class DataServiceAgent:
                 print(f"💾 命中缓存，直接返回结果")
                 return self.session_cache[cache_key]
             
-            # 使用新版本的invoke方法
+            # 使用executor的invoke方法
             print(f"🤖 调用DataServiceAgent执行数据获取...")
             result = await self.executor.ainvoke({
                 "input": request
             })
-            
+
+            # 调试：检查返回结果的完整结构
+            print(f"🔍 AgentExecutor返回结果键: {list(result.keys()) if result else 'None'}")
+            print(f"🔍 intermediate_steps长度: {len(result.get('intermediate_steps', []))}")
+
             # 处理结果 - 适配0.2版本的返回格式
             if result and "output" in result:
+                intermediate_steps = result.get("intermediate_steps", [])
+                # 调试：显示每个中间步骤的详细信息
+                if intermediate_steps:
+                    print(f"🔍 中间步骤详情:")
+                    for i, step in enumerate(intermediate_steps):
+                        print(f"   步骤{i}: {type(step)}")
+                        if hasattr(step, '__iter__') and not isinstance(step, str):
+                            if len(step) >= 2:
+                                action = step[0]
+                                observation = step[1]
+                                print(f"      工具: {getattr(action, 'tool', 'N/A')}")
+                                print(f"      输入: {getattr(action, 'tool_input', 'N/A')}")
+                                print(f"      输出类型: {type(observation)}")
+                                print(f"      输出长度: {len(str(observation))} 字符")
+                else:
+                    print(f"⚠️ 没有中间步骤，LLM可能没有调用工具")
+
                 response_data = {
                     "success": True,
                     "message": "数据获取成功",
@@ -127,7 +147,7 @@ class DataServiceAgent:
                     "agent": self.name,
                     "tools_used": [tool.name for tool in self.tools],
                     "context": context or {},
-                    "intermediate_steps": result.get("intermediate_steps", [])
+                    "intermediate_steps": intermediate_steps
                 }
                 
                 # 缓存结果

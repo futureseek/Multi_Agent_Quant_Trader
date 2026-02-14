@@ -16,6 +16,8 @@ from typing_extensions import Annotated, TypedDict
 from ..config.config_manager import config_manager
 from .message_manager import MessageManager
 from .data_service_agent import data_service_agent
+from .strategy_agent import strategy_agent
+from .backtest_agent import backtest_agent
 
 class AgentState(TypedDict):
     """Agent状态定义"""
@@ -27,6 +29,13 @@ class AgentState(TypedDict):
     needs_data: Optional[bool]
     data_request: Optional[str]
     fetched_data: Optional[Dict[str, Any]]
+
+    # 回测相关
+    strategy_code: Optional[str]  # 新增：生成的策略代码
+    strategy_name: Optional[str]  # 新增：策略类名
+    backtest_result: Optional[Dict]  # 新增：回测结果
+    backtest_summary: Optional[str]  # 新增：回测摘要
+
     final_response: Optional[str]
     error: Optional[str]
 
@@ -60,23 +69,27 @@ class HandlerAgent:
         print(f"✅ HandlerAgent 初始化完成 - 模型: {agent_config['model_name']}")
     
     def _build_graph(self) -> StateGraph:
-        """构建LangGraph工作流"""
+        """构建LangGraph工作流（扩展版）"""
         workflow = StateGraph(AgentState)
-        
-        # 添加节点
+
+        # 添加节点（原有）
         workflow.add_node("parse_input", self._parse_input_node)
         workflow.add_node("analyze_intent", self._analyze_intent_node)
         workflow.add_node("check_data_need", self._check_data_need_node)
         workflow.add_node("fetch_data", self._fetch_data_node)
         workflow.add_node("generate_response", self._generate_response_node)
         workflow.add_node("format_output", self._format_output_node)
-        
+
+        # 添加节点（新增）
+        workflow.add_node("generate_strategy", self._generate_strategy_node)  # 新增！
+        workflow.add_node("run_backtest", self._run_backtest_node)  # 新增！
+
         # 定义流程
         workflow.add_edge(START, "parse_input")
         workflow.add_edge("parse_input", "analyze_intent")
         workflow.add_edge("analyze_intent", "check_data_need")
-        
-        # 条件分支：根据是否需要数据决定路径
+
+        # 条件分支1：是否需要数据
         workflow.add_conditional_edges(
             "check_data_need",
             self._should_fetch_data,
@@ -85,11 +98,24 @@ class HandlerAgent:
                 "generate_response": "generate_response"
             }
         )
-        
-        workflow.add_edge("fetch_data", "generate_response")
+
+        # 条件分支2：数据获取后路由（核心！）
+        workflow.add_conditional_edges(
+            "fetch_data",
+            self._route_after_data,
+            {
+                "generate_strategy": "generate_strategy",  # 回测分支
+                "generate_response": "generate_response"  # 分析分支
+            }
+        )
+
+        # 回测链路
+        workflow.add_edge("generate_strategy", "run_backtest")
+        workflow.add_edge("run_backtest", "generate_response")
+
         workflow.add_edge("generate_response", "format_output")
         workflow.add_edge("format_output", END)
-        
+
         return workflow.compile(checkpointer=self.checkpointer)
     
     async def _parse_input_node(self, state: AgentState) -> AgentState:
@@ -120,13 +146,15 @@ class HandlerAgent:
             # 这里可以添加更复杂的意图分析逻辑
             # 目前先做简单的关键词分析
             user_input = state["user_input"].lower()
-            
-            if any(keyword in user_input for keyword in ["股票", "投资", "分析", "策略"]):
+
+            if any(keyword in user_input for keyword in ["回测", "策略", "收益", "夏普", "绩效"]):
+                intent = "backtest_request"
+            elif any(keyword in user_input for keyword in ["股票", "投资", "分析"]):
                 intent = "investment_analysis"
             elif any(keyword in user_input for keyword in ["风险", "回撤", "波动"]):
                 intent = "risk_analysis"
-            elif any(keyword in user_input for keyword in ["回测", "策略", "收益"]):
-                intent = "strategy_analysis"
+            elif any(keyword in user_input for keyword in ["选股", "筛选", "数据"]):
+                intent = "data_analysis"
             else:
                 intent = "general_question"
             
@@ -146,6 +174,16 @@ class HandlerAgent:
             print("🤖 AI智能判断是否需要获取数据...")
             state["current_step"] = "checking_data_need"
             
+            # 先检查用户意图，对于回测请求强制需要数据
+            intent = state.get("analysis_result", "")
+            
+            if intent == "backtest_request":
+                # 回测请求必须获取数据
+                print("🎯 检测到回测请求，强制获取数据")
+                state["needs_data"] = True
+                state["data_request"] = "获取000001.SZ最近一年的日K线数据用于策略回测"
+                return state
+            
             # 构建AI判断提示词
             judge_prompt = f"""
 你是一个专业的投资分析助手。请判断用户的以下问题是否需要获取实时股票数据来进行回答。
@@ -155,8 +193,9 @@ class HandlerAgent:
 判断标准：
 1. 如果问题涉及具体股票的价格、行情、K线数据、技术分析等，需要数据
 2. 如果问题涉及某只股票的历史表现、走势分析等，需要数据  
-3. 如果是一般性的投资理论、概念解释、策略讨论等，不需要数据
-4. 如果是问候、介绍等日常对话，不需要数据
+3. 如果问题涉及策略回测、生成策略等，需要数据
+4. 如果是一般性的投资理论、概念解释等，不需要数据
+5. 如果是问候、介绍等日常对话，不需要数据
 
 请只回答"YES"（需要数据）或"NO"（不需要数据），并简要说明理由。
 
@@ -204,6 +243,17 @@ class HandlerAgent:
         needs_data = state.get("needs_data", False)
         print(f"🎯 路由决策: {'获取数据' if needs_data else '直接回复'}")
         return "fetch_data" if needs_data else "generate_response"
+
+    def _route_after_data(self, state: AgentState) -> str:
+        """数据获取完成后的路由（核心）"""
+        intent = state.get("analysis_result")
+
+        print(f"🎯 路由决策: 意图={intent}")
+
+        if intent == "backtest_request":
+            return "generate_strategy"
+        else:
+            return "generate_response"
     
     async def _fetch_data_node(self, state: AgentState) -> AgentState:
         """数据获取节点"""
@@ -222,16 +272,83 @@ class HandlerAgent:
             )
             
             if data_result["success"]:
-                state["fetched_data"] = data_result
-                print(f"✅ 数据获取成功")
+                # 提取中间步骤中的工具输出（实际的数据）
+                intermediate_steps = data_result.get("intermediate_steps", [])
+
+                # 修复：intermediate_steps是tuple列表，需要正确解析
+                print(f"🔍 调试: intermediate_steps类型={type(intermediate_steps)}, 长度={len(intermediate_steps)}")
                 
+                # 从工具输出中提取实际数据
+                data = None
+                for i, step in enumerate(intermediate_steps):
+                    print(f"🔍 步骤{i}: 类型={type(step)}")
+                    
+                    # step是tuple: (AgentAction, observation)
+                    if isinstance(step, tuple) and len(step) == 2:
+                        action, observation = step
+                        print(f"🔍 步骤{i}: 工具={getattr(action, 'tool', 'unknown')}")
+                        
+                        # observation可能是字典或字符串
+                        if isinstance(observation, dict) and "data" in observation:
+                            # 直接是字典格式的数据
+                            raw_data = observation["data"]
+                            if isinstance(raw_data, list) and len(raw_data) > 0:
+                                data = raw_data
+                                print(f"✅ 从字典格式提取到 {len(data)} 条K线")
+                                break
+                        elif isinstance(observation, str):
+                            # 尝试解析JSON字符串
+                            try:
+                                import json
+                                parsed = json.loads(observation)
+                                
+                                # 查找新的标准格式：{"extracted_data": {"data": [...]}}
+                                if isinstance(parsed, dict) and "extracted_data" in parsed:
+                                    extracted_data = parsed["extracted_data"]
+                                    if isinstance(extracted_data, dict) and "data" in extracted_data:
+                                        inner_data = extracted_data["data"]
+                                        if isinstance(inner_data, list) and len(inner_data) > 0:
+                                            # 检查第一个元素是否包含K线字段
+                                            if inner_data[0] and any(key in inner_data[0] for key in ['trade_date', 'ts_code', 'close']):
+                                                data = inner_data
+                                                print(f"✅ 从标准格式提取到 {len(data)} 条K线")
+                                                break
+                                
+                                # 兼容旧格式：查找可能的K线数据结构
+                                if isinstance(parsed, dict) and "data" in parsed:
+                                    inner_data = parsed["data"]
+                                    if isinstance(inner_data, list) and len(inner_data) > 0:
+                                        # 检查第一个元素是否包含K线字段
+                                        if inner_data[0] and any(key in inner_data[0] for key in ['trade_date', 'ts_code', 'close']):
+                                            data = inner_data
+                                            print(f"✅ 从旧JSON格式提取到 {len(data)} 条K线")
+                                            break
+                                elif isinstance(parsed, list) and len(parsed) > 0:
+                                    # 直接是K线列表
+                                    if any(key in parsed[0] for key in ['trade_date', 'ts_code', 'close']):
+                                        data = parsed
+                                        print(f"✅ 从JSON列表提取到 {len(data)} 条K线")
+                                        break
+                                        
+                            except (json.JSONDecodeError, TypeError, KeyError):
+                                print(f"⚠️ 步骤{i}解析JSON失败，跳过")
+                                continue
+
+                print(f"📊 最终提取到的数据: {len(data) if data else 0} 条K线")
+
+                # 保存原始data_result用于调试
+                state["fetched_data"] = {
+                    **data_result,
+                    "data": data  # 实际的K线数据列表
+                }
+
                 # 将数据信息添加到消息中，供后续生成回复使用
                 data_content = data_result.get('content', '')
                 if len(data_content) > 500:
                     data_summary = data_content[:500] + "..."
                 else:
                     data_summary = data_content
-                    
+
                 data_message = f"\n[💰 已获取到相关数据]: {data_summary}"
                 state["messages"].append(SystemMessage(content=data_message))
                 
@@ -242,7 +359,7 @@ class HandlerAgent:
                 state["messages"].append(SystemMessage(content=error_msg))
             
             return state
-            
+
         except Exception as e:
             print(f"❌ 数据获取异常: {e}")
             # 数据获取失败不应该中断整个流程
@@ -253,23 +370,140 @@ class HandlerAgent:
             error_msg = f"\n[❌ 数据服务异常]: 暂时无法获取数据，将基于已有知识回答"
             state["messages"].append(SystemMessage(content=error_msg))
             return state
+
+    async def _generate_strategy_node(self, state: AgentState) -> AgentState:
+        """生成策略节点（新增）"""
+        try:
+            print("🤖 生成交易策略...")
+            state["current_step"] = "generating_strategy"
+
+            user_input = state["user_input"]
+
+            # 调用StrategyAgent生成策略
+            result = await strategy_agent.generate_strategy(
+                user_request=user_input,
+                data_context=state.get("fetched_data")
+            )
+
+            if result["success"]:
+                state["strategy_code"] = result["strategy_code"]
+                state["strategy_name"] = result["strategy_name"]
+                print(f"✅ 策略代码生成完成")
+            else:
+                state["error"] = result.get("error", "策略生成失败")
+
+            return state
+
+        except Exception as e:
+            print(f"❌ 策略生成失败: {e}")
+            state["error"] = f"策略生成异常: {str(e)}"
+            return state
+
+    async def _run_backtest_node(self, state: AgentState) -> AgentState:
+        """回测执行节点（新增）"""
+        try:
+            print("⚙️  执行回测...")
+            state["current_step"] = "running_backtest"
+
+            # 获取策略代码和数据
+            strategy_code = state.get("strategy_code")
+
+            # 从fetched_data中提取实际的K线数据
+            fetched_data = state.get("fetched_data", {})
+            data = None
+
+            if isinstance(fetched_data, dict):
+                # 优先检查直接在data字段中的数据
+                if "data" in fetched_data:
+                    raw_data = fetched_data["data"]
+                    if isinstance(raw_data, list) and len(raw_data) > 0:
+                        data = raw_data
+                        print(f"✅ 从data字段提取到 {len(data)} 条K线")
+                    elif isinstance(raw_data, dict):
+                        print(f"⚠️ data字段是dict，需要进一步提取: {list(raw_data.keys())}")
+
+                # 如果data字段没有，检查intermediate_steps
+                if data is None and "intermediate_steps" in fetched_data:
+                    for step in fetched_data["intermediate_steps"]:
+                        if "observation" in step:
+                            try:
+                                import json
+                                parsed = json.loads(step["observation"])
+                                if isinstance(parsed, dict) and "data" in parsed:
+                                    inner = parsed["data"]
+                                    if isinstance(inner, list) and len(inner) > 0:
+                                        data = inner
+                                        print(f"✅ 从intermediate_steps提取到 {len(data)} 条K线")
+                                        break
+                            except:
+                                pass
+
+            print(f"📊 最终用于回测的数据: {len(data) if data else 0} 条")
+
+            if not strategy_code:
+                raise ValueError("缺少策略代码")
+
+            if not data or (isinstance(data, list) and len(data) == 0):
+                raise ValueError("缺少历史数据")
+
+            # 调用BacktestAgent执行回测
+            result = backtest_agent.run_backtest(
+                strategy_code=strategy_code,
+                data=data
+            )
+
+            if result["success"]:
+                state["backtest_result"] = result["result"]
+                state["backtest_summary"] = result["summary"]
+                print(f"✅ 回测完成")
+            else:
+                state["error"] = result.get("error", "回测失败")
+
+            return state
+
+        except Exception as e:
+            print(f"❌ 回测执行失败: {e}")
+            state["error"] = f"回测执行异常: {str(e)}"
+            return state
     
     async def _generate_response_node(self, state: AgentState) -> AgentState:
         """生成回复节点"""
         try:
             print("✨ 生成AI回复...")
             state["current_step"] = "generating_response"
-            
+
+            intent = state.get("analysis_result", "general_question")
+
+            # 如果有回测结果，优先展示
+            if intent == "backtest_request" and "backtest_summary" in state:
+                summary = state["backtest_summary"]
+
+                # 简化：直接使用预格式化的摘要
+                response_content = f"""
+{summary}
+
+💡 提示：
+- 可以尝试调整策略参数（均线周期、止盈止损）
+- 可以对比不同策略的表现
+- 历史数据仅供参考，不构成投资建议
+"""
+                state["final_response"] = response_content
+                print(f"💬 回测结果生成完成")
+                return state
+
             # 根据意图调整提示词
             intent = state.get("analysis_result", "general_question")
-            
+
             if intent == "investment_analysis":
                 system_prompt = """你是一个专业的投资分析师。请基于用户的问题和之前的对话历史提供专业的投资建议和分析。
                 重点关注：基本面分析、技术面分析、市场趋势、投资风险等方面。请根据对话历史保持上下文连贯性。"""
             elif intent == "risk_analysis":
                 system_prompt = """你是一个专业的风险管理专家。请重点分析投资风险，包括：
                 市场风险、信用风险、流动性风险、操作风险等，并提供风险控制建议。请根据对话历史保持上下文连贯性。"""
-            elif intent == "strategy_analysis":
+            elif intent == "data_analysis":
+                system_prompt = """你是一个专业的数据分析专家。请专注于市场数据分析、技术指标分析和数据可视化建议。
+                请根据对话历史保持上下文连贯性。"""
+            elif intent == "backtest_request":
                 system_prompt = """你是一个量化策略专家。请专注于投资策略的设计、回测分析和优化建议。
                 包括策略逻辑、历史表现、风险收益特征等。请根据对话历史保持上下文连贯性。"""
             else:
@@ -305,6 +539,12 @@ class HandlerAgent:
             response = await self.llm.ainvoke(messages)
             response_content = response.content
             
+            # 打印模型的实际输出内容（用于调试）
+            print(f"🤖 模型输出内容:")
+            print("=" * 50)
+            print(response_content)
+            print("=" * 50)
+            
             state["final_response"] = response_content
             print(f"💬 生成回复完成，长度: {len(response_content)}")
             
@@ -320,7 +560,7 @@ class HandlerAgent:
         try:
             print("📝 格式化输出...")
             state["current_step"] = "formatting_output"
-            
+
             # 添加时间戳和元信息
             formatted_response = {
                 "content": state["final_response"],
@@ -329,12 +569,19 @@ class HandlerAgent:
                 "conversation_id": state.get("conversation_id", ""),
                 "agent": "handler_agent"
             }
-            
+
             state["final_response"] = formatted_response
+
+            # 将AI回复添加到messages中，使checkpoint能够保存完整的对话历史
+            response_content = formatted_response["content"]
+            if isinstance(response_content, dict):
+                response_content = response_content.get("content", response_content)
+            state["messages"].append(AIMessage(content=str(response_content)))
+
             print("✅ 输出格式化完成")
-            
+
             return state
-            
+
         except Exception as e:
             print(f"❌ 输出格式化失败: {e}")
             state["error"] = f"输出格式化失败: {str(e)}"
@@ -376,23 +623,19 @@ class HandlerAgent:
                 "needs_data": None,
                 "data_request": None,
                 "fetched_data": None,
+                # 回测相关（新增）
+                "strategy_code": None,
+                "strategy_name": None,
+                "backtest_result": None,
+                "backtest_summary": None,
                 "final_response": None,
                 "error": None
             }
             
             # 运行工作流，传入config以启用历史记忆
+            # checkpoint会自动保存状态，包括messages字段中的AI回复
             result = await self.graph.ainvoke(initial_state, config=config)
-            
-            # 添加AI回复到历史记忆中
-            if result.get("final_response") and not result.get("error"):
-                ai_response_content = result["final_response"]["content"] if isinstance(result["final_response"], dict) else result["final_response"]
-                # 手动添加AI回复到对话历史中
-                ai_message_state = {
-                    "messages": [AIMessage(content=ai_response_content)],
-                }
-                # 使用相同的config保存AI回复
-                await self.graph.ainvoke(ai_message_state, config=config)
-            
+
             if result.get("error"):
                 print(f"❌ 处理失败: {result['error']}")
                 return {
@@ -423,24 +666,6 @@ class HandlerAgent:
                 }
             }
     
-    async def test_workflow(self) -> bool:
-        """测试工作流是否正常"""
-        try:
-            test_result = await self.process_message(
-                user_input="你好，请做一个简单的自我介绍。",
-                conversation_id="test_conversation"
-            )
-            
-            if test_result["success"]:
-                print("✅ HandlerAgent工作流测试成功")
-                return True
-            else:
-                print(f"❌ HandlerAgent工作流测试失败: {test_result.get('error')}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ HandlerAgent工作流测试异常: {e}")
-            return False
 
 # 全局HandlerAgent实例
 handler_agent = HandlerAgent()

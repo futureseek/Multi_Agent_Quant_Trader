@@ -1,4 +1,5 @@
-# Multi-Agent Quant Trader: 基于 LangGraph 与高性能 C++ 引擎的混合架构交易系统
+# Multi-Agent Quant Trader: 基于 LangGraph 的多智能体协同量化交易决策与回测系统
+
 
 
 ## 启动需要
