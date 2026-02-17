@@ -169,38 +169,56 @@ class DailyDataTool:
                 df = df.tail(limit)
 
             # 数据格式化
-            result_data = {
-                "ts_code": ts_code,
-                "start_date": start_date,
-                "end_date": end_date,
-                "count": len(df),
-                "data": df.to_dict('records')
-            }
+            kline_data = df.to_dict('records')
 
-            # 🎯 新增：保存CSV文件用于调试
+            # 🎯 保存CSV文件用于调试
             try:
-                csv_dir = "Multi_Agent_Quant_Trader/data/debug_csv"
-                os.makedirs(csv_dir, exist_ok=True)
-                csv_filename = f"{csv_dir}/{ts_code}_{start_date}_{end_date}_{datetime.now().strftime('%H%M%S')}.csv"
+                # 使用绝对路径确保目录创建成功
+                import sys
+                from pathlib import Path
+
+                # 获取项目根目录（假设当前文件在 src/service_layer/tools/ 下）
+                current_file = Path(__file__)
+                project_root = current_file.parent.parent.parent.parent
+                csv_dir = project_root / "data" / "debug_csv" / "daily_data_tool"
+
+                # 创建目录
+                csv_dir.mkdir(parents=True, exist_ok=True)
+
+                # 生成文件名（包含时间戳避免覆盖）
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                csv_filename = csv_dir / f"{ts_code}_{start_date}_{end_date}_{timestamp}.csv"
+
+                # 保存CSV
                 df.to_csv(csv_filename, index=False, encoding='utf-8')
+
                 print(f"📁 数据已保存到CSV文件: {csv_filename}")
                 print(f"📊 CSV文件包含 {len(df)} 行，{len(df.columns)} 列")
-                
+
                 # 输出前几行数据用于验证
                 print(f"📋 CSV前3行数据预览:")
                 for i, row in df.head(3).iterrows():
                     print(f"   {i}: {dict(row)}")
-                    
+
             except Exception as csv_error:
                 print(f"⚠️ CSV保存失败: {csv_error}")
+                import traceback
+                traceback.print_exc()
 
             print(f"✅ 成功处理 {len(df)} 条日线数据")
 
+            # 统一返回格式
             return {
                 "success": True,
                 "message": f"成功获取 {ts_code} 的日线数据，共 {len(df)} 条记录",
-                "data": result_data,
-                "count": len(df)
+                "extracted_data": {
+                    "ts_code": ts_code,
+                    "data_type": "daily",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "count": len(df),
+                    "data": kline_data
+                }
             }
 
         except Exception as e:

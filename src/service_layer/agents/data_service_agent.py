@@ -73,7 +73,7 @@ class DataServiceAgent:
         self.executor = AgentExecutor(
             agent=self.agent,
             tools=self.tools,
-            verbose=True,  # 开启详细日志
+            verbose=False,  # 是否开启详细日志
             handle_parsing_errors=True,
             max_iterations=3,
             return_intermediate_steps=True
@@ -103,13 +103,7 @@ class DataServiceAgent:
         try:
             print(f"\n🔍 DataServiceAgent开始处理数据请求")
             print(f"📋 请求内容: {request[:100]}...")
-            
-            # 检查缓存
-            cache_key = f"{conversation_id}:{hash(request)}"
-            if cache_key in self.session_cache:
-                print(f"💾 命中缓存，直接返回结果")
-                return self.session_cache[cache_key]
-            
+
             # 使用executor的invoke方法
             print(f"🤖 调用DataServiceAgent执行数据获取...")
             result = await self.executor.ainvoke({
@@ -120,39 +114,32 @@ class DataServiceAgent:
             print(f"🔍 AgentExecutor返回结果键: {list(result.keys()) if result else 'None'}")
             print(f"🔍 intermediate_steps长度: {len(result.get('intermediate_steps', []))}")
 
-            # 处理结果 - 适配0.2版本的返回格式
+            # 处理结果
             if result and "output" in result:
                 intermediate_steps = result.get("intermediate_steps", [])
-                # 调试：显示每个中间步骤的详细信息
+
                 if intermediate_steps:
-                    print(f"🔍 中间步骤详情:")
+                    print(f"🔍 调用了 {len(intermediate_steps)} 个数据工具")
                     for i, step in enumerate(intermediate_steps):
-                        print(f"   步骤{i}: {type(step)}")
-                        if hasattr(step, '__iter__') and not isinstance(step, str):
-                            if len(step) >= 2:
-                                action = step[0]
-                                observation = step[1]
-                                print(f"      工具: {getattr(action, 'tool', 'N/A')}")
-                                print(f"      输入: {getattr(action, 'tool_input', 'N/A')}")
-                                print(f"      输出类型: {type(observation)}")
-                                print(f"      输出长度: {len(str(observation))} 字符")
+                        if hasattr(step, '__iter__') and not isinstance(step, str) and len(step) >= 2:
+                            action = step[0]
+                            tool_name = getattr(action, 'tool', 'N/A')
+                            print(f"   工具{i+1}: {tool_name}")
                 else:
                     print(f"⚠️ 没有中间步骤，LLM可能没有调用工具")
 
+                data_summary = f"已调用 {len(intermediate_steps)} 个数据工具，详细数据已保存到CSV文件"
                 response_data = {
                     "success": True,
-                    "message": "数据获取成功",
-                    "content": result["output"],
+                    "message": data_summary,
+                    "content": data_summary,
                     "timestamp": datetime.now().isoformat(),
                     "agent": self.name,
                     "tools_used": [tool.name for tool in self.tools],
                     "context": context or {},
                     "intermediate_steps": intermediate_steps
                 }
-                
-                # 缓存结果
-                self.session_cache[cache_key] = response_data
-                
+
                 print(f"✅ 数据请求处理完成")
                 return response_data
             else:

@@ -6,6 +6,7 @@
 // 全局变量
 let currentConversationId = null;
 let socket = null;
+let isSending = false;  // 防止重复提交标志
 
 // DOM元素引用
 const elements = {
@@ -261,6 +262,14 @@ class QuantTraderApp {
         const message = elements.messageInput?.value?.trim();
         if (!message || !currentConversationId) return;
 
+        // 防止重复提交
+        if (isSending) {
+            console.log('正在发送中，请勿重复提交');
+            return;
+        }
+
+        isSending = true;
+
         try {
             // 立即显示用户消息
             this.displayMessage({
@@ -292,10 +301,13 @@ class QuantTraderApp {
             
             // 移除思考中状态
             this.removeThinkingMessage(thinkingMessageId);
-            
+
             // 重新启用输入
             this.enableInput();
-            
+
+            // 重置发送标志
+            isSending = false;
+
             if (data.success && data.ai_response) {
                 // 显示真实的AI回复
                 this.displayMessage({
@@ -319,13 +331,16 @@ class QuantTraderApp {
         } catch (error) {
             console.error('发送消息失败:', error);
             this.showError('发送消息失败');
-            
+
             // 出错时也要移除思考状态并重新启用输入
             const thinkingElement = document.querySelector('.thinking-message');
             if (thinkingElement) {
                 thinkingElement.remove();
             }
             this.enableInput();
+
+            // 重置发送标志
+            isSending = false;
         }
     }
 

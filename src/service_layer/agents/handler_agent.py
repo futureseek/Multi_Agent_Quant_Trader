@@ -178,10 +178,10 @@ class HandlerAgent:
             intent = state.get("analysis_result", "")
             
             if intent == "backtest_request":
-                # 回测请求必须获取数据
+                # 回测请求必须获取数据，传递用户原始输入让DataServiceAgent解析
                 print("🎯 检测到回测请求，强制获取数据")
                 state["needs_data"] = True
-                state["data_request"] = "获取000001.SZ最近一年的日K线数据用于策略回测"
+                state["data_request"] = state["user_input"]  # 传递原始输入
                 return state
             
             # 构建AI判断提示词
@@ -282,57 +282,36 @@ class HandlerAgent:
                 data = None
                 for i, step in enumerate(intermediate_steps):
                     print(f"🔍 步骤{i}: 类型={type(step)}")
-                    
+
                     # step是tuple: (AgentAction, observation)
                     if isinstance(step, tuple) and len(step) == 2:
                         action, observation = step
-                        print(f"🔍 步骤{i}: 工具={getattr(action, 'tool', 'unknown')}")
-                        
-                        # observation可能是字典或字符串
-                        if isinstance(observation, dict) and "data" in observation:
-                            # 直接是字典格式的数据
-                            raw_data = observation["data"]
-                            if isinstance(raw_data, list) and len(raw_data) > 0:
-                                data = raw_data
-                                print(f"✅ 从字典格式提取到 {len(data)} 条K线")
-                                break
-                        elif isinstance(observation, str):
-                            # 尝试解析JSON字符串
-                            try:
-                                import json
-                                parsed = json.loads(observation)
-                                
-                                # 查找新的标准格式：{"extracted_data": {"data": [...]}}
-                                if isinstance(parsed, dict) and "extracted_data" in parsed:
-                                    extracted_data = parsed["extracted_data"]
-                                    if isinstance(extracted_data, dict) and "data" in extracted_data:
-                                        inner_data = extracted_data["data"]
-                                        if isinstance(inner_data, list) and len(inner_data) > 0:
-                                            # 检查第一个元素是否包含K线字段
-                                            if inner_data[0] and any(key in inner_data[0] for key in ['trade_date', 'ts_code', 'close']):
-                                                data = inner_data
-                                                print(f"✅ 从标准格式提取到 {len(data)} 条K线")
-                                                break
-                                
-                                # 兼容旧格式：查找可能的K线数据结构
-                                if isinstance(parsed, dict) and "data" in parsed:
-                                    inner_data = parsed["data"]
-                                    if isinstance(inner_data, list) and len(inner_data) > 0:
-                                        # 检查第一个元素是否包含K线字段
-                                        if inner_data[0] and any(key in inner_data[0] for key in ['trade_date', 'ts_code', 'close']):
-                                            data = inner_data
-                                            print(f"✅ 从旧JSON格式提取到 {len(data)} 条K线")
-                                            break
-                                elif isinstance(parsed, list) and len(parsed) > 0:
-                                    # 直接是K线列表
-                                    if any(key in parsed[0] for key in ['trade_date', 'ts_code', 'close']):
-                                        data = parsed
-                                        print(f"✅ 从JSON列表提取到 {len(data)} 条K线")
-                                        break
-                                        
-                            except (json.JSONDecodeError, TypeError, KeyError):
-                                print(f"⚠️ 步骤{i}解析JSON失败，跳过")
-                                continue
+                        tool_name = getattr(action, 'tool', 'unknown')
+                        print(f"🔍 步骤{i}: 工具={tool_name}")
+
+                        # 🔍 调试：打印observation结构
+                        print(f"🔍 observation类型: {type(observation)}")
+                        if isinstance(observation, dict):
+                            print(f"🔍 observation键: {list(observation.keys())}")
+
+                        # 统一解析：所有工具都返回 {"success": True, "extracted_data": {...}}
+                        if isinstance(observation, dict):
+                            if "extracted_data" in observation:
+                                extracted_data = observation["extracted_data"]
+                                data = extracted_data.get("data")
+                                data_type = extracted_data.get("data_type")
+                                ts_code = extracted_data.get("ts_code")
+
+                                if isinstance(data, list) and len(data) > 0:
+                                    print(f"✅ 从{tool_name}提取到 {len(data)} 条{data_type}数据")
+                                    print(f"   股票代码: {ts_code}")
+                                    break
+                                else:
+                                    print(f"⚠️ {tool_name}返回的数据为空或格式错误: {type(data)}")
+                            else:
+                                print(f"⚠️ {tool_name}返回格式缺少extracted_data字段")
+                        else:
+                            print(f"⚠️ {tool_name}返回的不是字典格式: {type(observation)}")
 
                 print(f"📊 最终提取到的数据: {len(data) if data else 0} 条K线")
 
@@ -538,16 +517,10 @@ class HandlerAgent:
             # 直接使用LangChain的ChatOpenAI调用
             response = await self.llm.ainvoke(messages)
             response_content = response.content
-            
-            # 打印模型的实际输出内容（用于调试）
-            print(f"🤖 模型输出内容:")
-            print("=" * 50)
-            print(response_content)
-            print("=" * 50)
-            
+
             state["final_response"] = response_content
-            print(f"💬 生成回复完成，长度: {len(response_content)}")
-            
+            print(f"💬 生成回复完成，长度: {len(response_content)}字符")
+
             return state
             
         except Exception as e:
@@ -633,7 +606,6 @@ class HandlerAgent:
             }
             
             # 运行工作流，传入config以启用历史记忆
-            # checkpoint会自动保存状态，包括messages字段中的AI回复
             result = await self.graph.ainvoke(initial_state, config=config)
 
             if result.get("error"):

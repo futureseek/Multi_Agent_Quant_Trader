@@ -264,3 +264,149 @@ Look for:
 3. **Token Limits**: Long conversations require Message Manager optimization
 4. **Date Format Validation**: Always validate `YYYYMMDD` format before API calls
 5. **Agent Coordination**: Don't bypass Handler Agent - all user requests flow through it first
+
+## Recent Updates (2026-02-15)
+
+### Fixed Issues
+
+#### 1. CSV Debug Output Added
+Added CSV export to all 3 data tools (daily_data_tool, adj_factor_tool, daily_basic_tool) with automatic directory creation at `data/debug_csv/`
+
+#### 2. Reduced Log Verbosity
+Removed full data output from logs (handler_agent line 484-488, data_service_agent line 137-141), now only shows summaries and CSV file paths
+
+#### 3. HandlerAgent Duplicate Execution (CRITICAL)
+**Problem**: HandlerAgent was executing the entire workflow twice:
+- First run: Normal full workflow
+- Second run: Triggered by redundant `ainvoke()` in `process_message()` to save AI reply
+
+**Root Cause**: Misunderstanding of LangGraph's checkpoint mechanism
+
+**Solution** (handler_agent.py):
+```python
+# REMOVED this code (lines 631-639):
+# if result.get("final_response") and not result.get("error"):
+#     ai_message_state = {"messages": [AIMessage(content=ai_response_content)]}
+#     await self.graph.ainvoke(ai_message_state, config=config)
+
+# ADDED to _format_output_node:
+state["messages"].append(AIMessage(content=str(response_content)))
+```
+
+**Key Insight**: LangGraph's checkpointer auto-saves state after each node. Just add AI reply to messages before END.
+
+#### 2. Unified Data Format (CRITICAL)
+**Problem**: Tools returned inconsistent formats:
+- `daily_data_tool.py`: Returned `{"data": {...}}` dict
+- `adj_factor_tool.py`: Returned JSON string
+- `daily_basic_tool.py`: Returned JSON string
+
+**Result**: Handler needed 100+ lines of parsing logic to handle multiple formats
+
+**Solution**: Standardized all tools to return:
+
+```python
+{
+    "success": True,
+    "message": "成功获取...",
+    "extracted_data": {
+        "ts_code": "000001.SZ",
+        "data_type": "daily",  # daily / adj_factor / daily_basic
+        "count": 248,
+        "data": [...]  # Actual data array
+    }
+}
+```
+
+**Files Modified**:
+- `daily_data_tool.py` (line 193-205)
+- `adj_factor_tool.py` (line 99-117)
+- `daily_basic_tool.py` (line 108-126)
+- `handler_agent.py` (_fetch_data_node simplified from 100+ lines to ~50 lines)
+- `handler_agent.py` (_run_backtest_node simplified data reading)
+
+**Lines of Code Reduced**: ~100 lines of redundant parsing logic removed
+
+#### 3. Data Flow Clarification
+**Before**: Complex nested parsing with multiple fallback paths
+**After**: Direct single-path data access
+
+```python
+# Data flow:
+Tool → {"extracted_data": {"data": [...]}} → Handler stores in state["fetched_data"]["data"]
+                                                              ↓
+                                              Backtest reads: state["fetched_data"]["data"]
+```
+
+## Known Issues (TODO)
+
+### 1. Backtest Zero Trades (HIGH Priority)
+**Symptom**:
+```
+总收益率: 0.00%
+交易次数: 0  ← 关键问题
+夏普比率: -46481426017038128.00  ← Division by zero/uninitialized
+```
+
+**Root Cause Chain**:
+
+#### 2.1 Symbol Mismatch (Main Issue)
+**Problem**: Strategy uses hardcoded symbol from example prompt
+```python
+# strategy_agent.py line 174 (example code in prompt)
+symbol = '600000.SH'  # ❌ Hardcoded
+```
+
+**Actual Data**: `000001.SZ` (Ping An Bank)
+
+**Result**: Strategy tries to `context.get_series('600000.SH', ...)` but data has `'000001.SZ'`, returns empty/no trades
+
+#### 2.2 Dynamic Symbol Not Passed to LLM
+**Problem**: `data_context` structure mismatch
+
+**What's Passed** (handler_agent.py _generate_strategy_node):
+```python
+data_context = state.get("fetched_data")  # Contains: {ts_code, data, data_type, ...}
+```
+
+**What Strategy Agent Expects** (strategy_agent.py _build_strategy_prompt line 143):
+```python
+stock_info = data_context.get("stock_info", {})  # ← Doesn't exist in fetched_data!
+```
+
+**Result**: Prompt lacks stock code info, LLM falls back to hardcoded example value
+
+#### 2.3 Sharpe Ratio Calculation Error
+**File**: `src/service_layer/strategy/python_engine.py` line 330-331
+
+**Problem**: When no trades, std(excess_returns) = 0, sharpe_ratio never gets calculated/initialized
+
+**Fix Needed**: Initialize `BacktestResult.sharpe_ratio = 0.0` and handle zero-division
+
+### 3. Architecture Notes
+
+#### Center-Radiation Pattern is Valid
+The HandlerAgent-centric architecture is CORRECT for LangGraph. The issue was:
+- ❌ Incorrect: Manually re-invoking graph to save state
+- ✅ Correct: Let LangGraph checkpoint auto-save, just update state["messages"]
+
+**Valid Pattern**:
+```
+Handler → DataAgent → Handler → StrategyAgent → Handler → BacktestAgent → Handler → END
+         ↑ returns to ↑          ↑ returns to ↑              ↑ returns to ↑
+```
+
+#### State Management Best Practice
+```python
+# DO: Modify state in nodes, let checkpoint handle persistence
+state["messages"].append(AIMessage(content=response))
+
+# DON'T: Re-invoke to save state
+await graph.ainvoke({"messages": [...]})  # ← Triggers full workflow again!
+```
+
+## Development Priority
+
+1. **HIGH**: Fix symbol passing to StrategyAgent (causes zero trades)
+2. **HIGH**: Fix Sharpe ratio calculation (causes confusing error display)
+3. **RECOMMENDED**: Add debug logging in strategy `on_bar()` to trace execution
