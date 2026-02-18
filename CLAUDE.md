@@ -405,8 +405,61 @@ state["messages"].append(AIMessage(content=response))
 await graph.ainvoke({"messages": [...]})  # ← Triggers full workflow again!
 ```
 
+## Recent Updates (2026-02-17)
+
+### Fixed Issues
+
+#### 1. Double Execution Completely Fixed (CRITICAL)
+**Problem**: Even after fixing checkpoint, still had duplicate execution (1+ min apart, same conversation_id)
+
+**Root Cause**: `handler_agent.py:604-612` had redundant `ainvoke()` call
+```python
+# This code re-triggered entire workflow:
+if result.get("final_response"):
+    ai_message_state = {"messages": [AIMessage(content=...)]}
+    await self.graph.ainvoke(ai_message_state, config=config)  # ← Re-ran full workflow!
+```
+
+**Solution**: Deleted lines 604-612, already added AI reply to messages in `_format_output_node` (548-552)
+
+**Files Modified**: `handler_agent.py` (process_message method)
+
+#### 2. Frontend Anti-Duplicate-Submit Mechanism
+**Added**: `isSending` flag to prevent rapid double-clicks (main.js:9, 266-271, 309, 343)
+
+#### 3. Dynamic Field Injection into Strategy Prompt
+**Problem**: LLM generated strategies using wrong field names (e.g., `volume` instead of `vol`)
+
+**Solution**: Extract actual field names from fetched data and inject into prompt
+```python
+# strategy_agent.py:143-165
+if data_context:
+    data_list = extracted_data.get("data", [])
+    if data_list:
+        available_fields = list(data_list[0].keys())  # Extract from real data
+        prompt += f"""
+可用数据字段: {', '.join(available_fields)}
+⚠️ 重要: vol (不是volume), amount (不是turnover)
+"""
+```
+
+**Files Modified**: `strategy_agent.py` (_build_strategy_prompt method)
+
+### Analysis Completed
+
+**Strategy Flow Analysis** (2026-02-17):
+1. ✅ Data passing: Handler → Engine → Context → Strategy (confirmed correct)
+2. ✅ Framework compliance: Must inherit StrategyBase (enforced by code)
+3. ✅ Bar shortage is valid: First 19 bars should be skipped (insufficient for 20-day MA)
+4. ✅ Field mapping: Tushare returns `vol`/`amount` (not `volume`/`turnover`)
+
+**Current Issues** (discussed, not yet fixed):
+- Strategy lacks robust error handling for data shortage (throws IndexError on bars 0-19)
+- Sharpe ratio shows extreme values when zero trades (division by zero)
+
 ## Development Priority
 
-1. **HIGH**: Fix symbol passing to StrategyAgent (causes zero trades)
-2. **HIGH**: Fix Sharpe ratio calculation (causes confusing error display)
-3. **RECOMMENDED**: Add debug logging in strategy `on_bar()` to trace execution
+1. **HIGH**: Fix strategy robustness for data shortage (add try-except in on_bar)
+2. **HIGH**: Fix Sharpe ratio calculation (handle zero-division)
+3. **MEDIUM**: Add warmup_period mechanism to backtest engine
+4. **LOW**: Add `is_data_ready()` helper method to SimpleContext

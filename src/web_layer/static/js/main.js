@@ -357,12 +357,12 @@ class QuantTraderApp {
         const messageElement = document.createElement('div');
         const isUser = message.role === 'user';
         const isError = message.is_error === true;
-        
+
         // 设置消息样式类
         let messageClasses = `message ${message.role}`;
         if (animate) messageClasses += ' fade-in';
         if (isError) messageClasses += ' error';
-        
+
         messageElement.className = messageClasses;
 
         const avatarIcon = isUser ? 'fas fa-user' : (isError ? 'fas fa-exclamation-triangle' : 'fas fa-robot');
@@ -381,13 +381,29 @@ class QuantTraderApp {
             `;
         }
 
+        // 处理消息内容：AI消息渲染Markdown，用户消息和错误消息保持原样
+        let messageContent;
+        if (!isUser && !isError) {
+            // AI消息：解析Markdown并净化HTML（防止XSS）
+            try {
+                const rawHtml = marked.parse(message.content);
+                messageContent = DOMPurify.sanitize(rawHtml);
+            } catch (e) {
+                console.error('Markdown解析失败:', e);
+                messageContent = message.content;
+            }
+        } else {
+            // 用户消息和错误消息：纯文本显示，保留换行
+            messageContent = this.escapeHtml(message.content).replace(/\n/g, '<br>');
+        }
+
         messageElement.innerHTML = `
             <div class="message-avatar ${avatarClass} ${isError ? 'error' : ''}">
                 <i class="${avatarIcon}"></i>
             </div>
             <div class="message-content">
                 ${agentBadge}
-                <div class="message-text ${isError ? 'error-text' : ''}">${message.content}</div>
+                <div class="message-text ${isError ? 'error-text' : ''}">${messageContent}</div>
                 <div class="message-time">${this.formatTime(message.timestamp)}</div>
             </div>
         `;
@@ -399,6 +415,13 @@ class QuantTraderApp {
         if (!isUser && animate && !isError) {
             this.addTypingEffect(messageElement);
         }
+    }
+
+    // HTML转义（用于用户消息和错误消息）
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     // 获取意图显示名称

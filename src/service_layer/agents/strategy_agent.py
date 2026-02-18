@@ -140,6 +140,31 @@ class StrategyAgent:
 
         # 如果有数据上下文，添加到prompt
         if data_context:
+            # 提取数据字段信息
+            extracted_data = data_context.get("extracted_data", {})
+            data_list = extracted_data.get("data", [])
+
+            if data_list:
+                # 从第一条数据中提取字段
+                available_fields = list(data_list[0].keys())
+
+                prompt += f"""
+
+可用数据字段: {', '.join(available_fields)}
+
+⚠️ 重要字段说明:
+- close: 收盘价
+- open: 开盘价
+- high: 最高价
+- low: 最低价
+- vol: 成交量（注意是vol不是volume）
+- amount: 成交额
+- trade_date: 交易日期
+
+请只使用上述字段访问数据，不要使用其他字段名。
+"""
+
+            # 添加股票信息
             stock_info = data_context.get("stock_info", {})
             if stock_info:
                 prompt += f"""

@@ -291,7 +291,117 @@ body {
 }
 
 .message-text {
-    line-height: 1.5;
+    line-height: 1.6;
+    word-wrap: break-word;
+}
+
+/* Emoji样式 */
+.message-text {
+    font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
+}
+
+/* Markdown内容样式 */
+.message-text h1,
+.message-text h2,
+.message-text h3,
+.message-text h4,
+.message-text h5,
+.message-text h6 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.message-text h1 { font-size: 1.5em; }
+.message-text h2 { font-size: 1.3em; }
+.message-text h3 { font-size: 1.15em; }
+.message-text h4 { font-size: 1.05em; }
+
+.message-text p {
+    margin-bottom: 0.8em;
+}
+
+.message-text ul,
+.message-text ol {
+    margin-bottom: 0.8em;
+    padding-left: 2em;
+}
+
+.message-text li {
+    margin-bottom: 0.3em;
+}
+
+.message-text code {
+    background-color: rgba(0, 0, 0, 0.05);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.message-text pre {
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 1em;
+    overflow-x: auto;
+    margin-bottom: 1em;
+}
+
+.message-text pre code {
+    background-color: transparent;
+    padding: 0;
+    border: none;
+}
+
+.message-text blockquote {
+    border-left: 4px solid #ddd;
+    padding-left: 1em;
+    margin-left: 0;
+    color: #666;
+    font-style: italic;
+}
+
+.message-text strong {
+    font-weight: 600;
+}
+
+.message-text em {
+    font-style: italic;
+}
+
+.message-text a {
+    color: #0d6efd;
+    text-decoration: none;
+}
+
+.message-text a:hover {
+    text-decoration: underline;
+}
+
+.message-text table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 1em;
+}
+
+.message-text th,
+.message-text td {
+    border: 1px solid #ddd;
+    padding: 0.5em;
+    text-align: left;
+}
+
+.message-text th {
+    background-color: #f5f5f5;
+    font-weight: 600;
+}
+
+.message-text hr {
+    border: none;
+    border-top: 1px solid #ddd;
+    margin: 1.5em 0;
 }
 
 .message-text.error-text {
