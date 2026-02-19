@@ -445,6 +445,28 @@ if data_context:
 
 **Files Modified**: `strategy_agent.py` (_build_strategy_prompt method)
 
+#### 4. Frontend Markdown Rendering
+**Problem**: AI replies with Markdown format displayed as plain text, no line breaks or formatting
+
+**Solution**: Added Markdown parsing and rendering to frontend
+```javascript
+// main.js:386-398 - Parse Markdown for AI messages
+if (!isUser && !isError) {
+    const rawHtml = marked.parse(message.content);
+    messageContent = DOMPurify.sanitize(rawHtml);  // Prevent XSS
+} else {
+    // User messages: plain text with line breaks
+    messageContent = this.escapeHtml(message.content).replace(/\n/g, '<br>');
+}
+```
+
+**Files Modified**:
+- `base.html` - Added marked.js and DOMPurify libraries
+- `main.js` - Modified displayMessage() to parse Markdown
+- `main.css` - Added Markdown content styles (h1-h6, lists, code blocks, tables, emoji support)
+
+**Result**: AI replies now display with proper formatting, emoji, headers, lists, and tables
+
 ### Analysis Completed
 
 **Strategy Flow Analysis** (2026-02-17):
@@ -463,3 +485,49 @@ if data_context:
 2. **HIGH**: Fix Sharpe ratio calculation (handle zero-division)
 3. **MEDIUM**: Add warmup_period mechanism to backtest engine
 4. **LOW**: Add `is_data_ready()` helper method to SimpleContext
+
+## Recent Updates (2026-02-19)
+
+### Major Features Implemented
+
+#### 1. Flexible Frontend Layout (策略代码面板)
+Implemented dynamic two-column layout showing strategy code alongside chat. Default is centered chat (100%), switches to 70%/30% split when strategy code is generated.
+
+**Files Modified**: `base.html`, `index.html`, `main.css`, `main.js`
+
+#### 2. Workflow Pause and Resume Mechanism
+User can review strategy code before running backtest. LangGraph checkpoint saves state after `generate_strategy`, workflow resumes when user clicks "运行回测" button via `continue_backtest()` method.
+
+**Key Changes**:
+- Added `user_confirmed_backtest` field to AgentState
+- Conditional edge: `generate_strategy` → {`run_backtest` OR `generate_response`}
+- `/api/backtest/run` now calls `handler_agent.continue_backtest(conversation_id)`
+
+**Files Modified**: `handler_agent.py`, `api_routes.py`
+
+#### 3. Flexbox Scrolling Fix
+Fixed issue where long messages couldn't scroll. Added `min-height: 0` to flex containers to allow child shrinking.
+
+**Files Modified**: `main.css`
+
+#### 4. Data Context Enhancement for LLM
+LLM now receives comprehensive statistical summary (max price, min price, returns, win rate, etc.) instead of generic "data fetched" message. Based on all fetched data, not just samples.
+
+**Files Modified**: `handler_agent.py` (_generate_response_node)
+
+### Key Architectural Decisions
+
+**LangGraph Resume vs Separate API**: Chose workflow resume to maintain conversation state through checkpoint, avoiding data duplication.
+
+**Statistical Summary vs Raw Data**: Send calculated statistics (~1KB) instead of all records (~15KB) for token efficiency and more meaningful LLM analysis.
+
+### Files Modified Summary
+
+**Frontend**:
+- `src/web_layer/templates/base.html`, `index.html`
+- `src/web_layer/static/css/main.css`
+- `src/web_layer/static/js/main.js`
+
+**Backend**:
+- `src/service_layer/agents/handler_agent.py`
+- `src/web_layer/routes/api_routes.py`

@@ -127,6 +127,7 @@ body {
     flex-direction: column;
     background: white;
     transition: all 0.3s ease;
+    min-height: 0; /* 重要：允许flex子元素缩小 */
 }
 
 /* Agent状态栏 */
@@ -694,4 +695,215 @@ body {
 #send-btn:disabled {
     background-color: #6c757d;
     border-color: #6c757d;
+}
+
+/* ==================== 策略面板样式 ==================== */
+
+/* 内容包装器：默认占据聊天区域全部空间 */
+#content-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* 重要：允许flex子元素缩小 */
+}
+
+/* 当显示策略面板时：切换为三列布局（聊天 | 分隔条 | 代码） */
+#content-wrapper.with-strategy {
+    display: grid;
+    grid-template-columns: 70% 4px 1fr; /* 聊天 | 分隔条 | 代码 */
+}
+
+/* 可拖动分隔条 */
+#resizer {
+    display: none; /* 默认隐藏 */
+    background: #e0e0e0;
+    cursor: col-resize;
+    transition: background 0.2s ease;
+    position: relative;
+}
+
+#resizer:hover,
+#resizer.active {
+    background: #0d6efd;
+}
+
+#resizer::after {
+    content: "⋮";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #999;
+    font-size: 12px;
+}
+
+#resizer:hover::after,
+#resizer.active::after {
+    color: white;
+}
+
+/* 当显示策略面板时，显示分隔条 */
+#content-wrapper.with-strategy #resizer {
+    display: block;
+}
+
+/* 策略区域：默认隐藏 */
+#strategy-panel {
+    display: none;
+    width: 100%;
+    height: 100%;
+    background: white;
+    border-left: 1px solid var(--border-color);
+    overflow-y: auto;
+    transition: all 0.3s ease;
+}
+
+/* 显示策略区域时 */
+#strategy-panel:not(.hidden) {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 策略面板头部 */
+.strategy-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--light-color);
+}
+
+.strategy-header h6 {
+    margin: 0;
+    font-weight: 600;
+}
+
+.close-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* 代码展示容器 */
+.strategy-code-container {
+    flex: 1;
+    overflow: auto;
+    background: #0d1117;
+    margin: 0;
+}
+
+.strategy-code-container pre {
+    margin: 0;
+    padding: 1rem;
+}
+
+.strategy-code-container code {
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+/* 策略操作按钮区 */
+.strategy-actions {
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+/* 回测结果区域 */
+.backtest-result {
+    border-top: 1px solid var(--border-color);
+    overflow-y: auto;
+    max-height: 400px;
+}
+
+.backtest-result .result-header {
+    padding: 0.75rem 1rem;
+    background: var(--light-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.backtest-result .result-header h6 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+/* 小型指标卡片 */
+.metric-card-mini {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.75rem 0.5rem;
+    text-align: center;
+}
+
+.metric-value-mini {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 0.25rem;
+}
+
+.metric-label-mini {
+    font-size: 0.7rem;
+    color: var(--secondary-color);
+}
+
+/* 交易记录列表 */
+.trades-list {
+    padding: 1rem;
+}
+
+.trades-container {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.trade-item {
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.85rem;
+}
+
+.trade-item:last-child {
+    border-bottom: none;
+}
+
+.trade-item .trade-time {
+    color: var(--secondary-color);
+    font-size: 0.75rem;
+}
+
+.trade-item .trade-action {
+    font-weight: 600;
+}
+
+.trade-item.trade-buy .trade-action {
+    color: var(--success-color);
+}
+
+.trade-item.trade-sell .trade-action {
+    color: var(--danger-color);
+}
+
+/* 隐藏类 */
+.hidden {
+    display: none !important;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    #content-wrapper.with-strategy {
+        grid-template-columns: 1fr;
+    }
+
+    #strategy-panel {
+        position: fixed;
+        top: var(--navbar-height);
+        right: 0;
+        width: 80%;
+        height: calc(100vh - var(--navbar-height));
+        z-index: 1000;
+        box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+    }
 }

@@ -21,8 +21,10 @@
     </div>
 </div>
 
-<!-- AI对话区域 -->
-<div id="chat-panel" class="chat-panel">
+<!-- 主内容区域容器（包含对话区域和策略区域） -->
+<div id="content-wrapper" class="content-wrapper">
+    <!-- AI对话区域 -->
+    <div id="chat-panel" class="chat-panel">
     <!-- Agent状态指示器 -->
     <div id="agent-status" class="agent-status-bar">
         <div class="agent-status-item" data-agent="data_analyst">
@@ -92,102 +94,75 @@
     </div>
 </div>
 
-<!-- 回测结果区域 -->
-<div id="results-panel" class="results-panel hidden">
-    <div class="results-header">
-        <h5 class="mb-0">
-            <i class="fas fa-chart-bar me-2"></i>回测结果
-        </h5>
-        <div class="results-actions">
-            <button id="refresh-results" class="btn btn-sm btn-outline-secondary">
-                <i class="fas fa-sync-alt me-1"></i>刷新
+<!-- 可拖动分隔条 -->
+<div id="resizer" class="resizer" title="拖动调整左右比例"></div>
+
+<!-- 策略区域（默认隐藏） -->
+<div id="strategy-panel" class="strategy-panel hidden">
+        <div class="strategy-header">
+            <h6 class="mb-0">
+                <i class="fas fa-code me-2"></i>策略代码
+            </h6>
+            <button id="close-strategy" class="btn btn-sm btn-outline-secondary close-btn">
+                <i class="fas fa-times"></i>
             </button>
-            <button id="export-pdf" class="btn btn-sm btn-outline-primary">
-                <i class="fas fa-file-pdf me-1"></i>导出
+        </div>
+
+        <!-- 代码展示区 -->
+        <div class="strategy-code-container">
+            <pre><code id="strategy-code" class="language-python"></code></pre>
+        </div>
+
+        <!-- 运行回测按钮 -->
+        <div class="strategy-actions">
+            <button id="run-backtest-btn" class="btn btn-primary w-100">
+                <i class="fas fa-play me-2"></i>运行回测
             </button>
         </div>
-    </div>
-    
-    <div class="results-content">
-        <!-- 结果概览面板 -->
-        <div id="performance-summary" class="performance-summary">
-            <div class="row g-3 mb-4">
-                <div class="col-6">
-                    <div class="metric-card">
-                        <div class="metric-value" id="total-return">--</div>
-                        <div class="metric-label">总收益率</div>
+
+        <!-- 回测结果区（嵌入在策略面板下方） -->
+        <div id="backtest-result" class="backtest-result hidden">
+            <div class="result-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>回测结果
+                </h6>
+            </div>
+
+            <!-- 结果概览 -->
+            <div id="performance-summary" class="performance-summary">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <div class="metric-card-mini">
+                            <div class="metric-value-mini" id="total-return">--</div>
+                            <div class="metric-label-mini">总收益率</div>
+                        </div>
                     </div>
-                </div>
-                <div class="col-6">
-                    <div class="metric-card">
-                        <div class="metric-value" id="sharpe-ratio">--</div>
-                        <div class="metric-label">夏普比率</div>
+                    <div class="col-6">
+                        <div class="metric-card-mini">
+                            <div class="metric-value-mini" id="sharpe-ratio">--</div>
+                            <div class="metric-label-mini">夏普比率</div>
+                        </div>
                     </div>
-                </div>
-                <div class="col-6">
-                    <div class="metric-card">
-                        <div class="metric-value" id="max-drawdown">--</div>
-                        <div class="metric-label">最大回撤</div>
+                    <div class="col-6">
+                        <div class="metric-card-mini">
+                            <div class="metric-value-mini" id="max-drawdown">--</div>
+                            <div class="metric-label-mini">最大回撤</div>
+                        </div>
                     </div>
-                </div>
-                <div class="col-6">
-                    <div class="metric-card">
-                        <div class="metric-value" id="win-rate">--</div>
-                        <div class="metric-label">胜率</div>
+                    <div class="col-6">
+                        <div class="metric-card-mini">
+                            <div class="metric-value-mini" id="win-rate">--</div>
+                            <div class="metric-label-mini">胜率</div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-        
-        <!-- 图表区域 -->
-        <div id="charts-container" class="charts-container">
-            <div class="chart-item mb-4">
-                <h6>收益率曲线</h6>
-                <canvas id="equity-chart" width="400" height="200"></canvas>
-            </div>
-            <div class="chart-item mb-4">
-                <h6>回撤图</h6>
-                <canvas id="drawdown-chart" width="400" height="200"></canvas>
-            </div>
-        </div>
-        
-        <!-- 数据表格区域 -->
-        <div id="tables-container" class="tables-container">
-            <div class="table-item mb-4">
-                <h6>关键指标</h6>
-                <div class="table-responsive">
-                    <table id="metrics-table" class="table table-sm table-striped">
-                        <thead>
-                            <tr>
-                                <th>指标</th>
-                                <th>数值</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- 动态加载 -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <div class="table-item">
-                <h6>交易记录</h6>
-                <div class="table-responsive">
-                    <table id="trades-table" class="table table-sm table-striped">
-                        <thead>
-                            <tr>
-                                <th>时间</th>
-                                <th>股票</th>
-                                <th>操作</th>
-                                <th>价格</th>
-                                <th>数量</th>
-                                <th>收益</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- 动态加载 -->
-                        </tbody>
-                    </table>
+
+            <!-- 交易记录 -->
+            <div class="trades-list">
+                <h6 class="text-muted small mb-2">交易记录</h6>
+                <div id="trades-container" class="trades-container">
+                    <!-- 动态加载 -->
                 </div>
             </div>
         </div>
@@ -196,5 +171,9 @@
 {% endblock %}
 
 {% block extra_js %}
+<!-- Highlight.js for code syntax highlighting -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 {% endblock %}

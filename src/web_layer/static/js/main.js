@@ -7,6 +7,7 @@
 let currentConversationId = null;
 let socket = null;
 let isSending = false;  // 防止重复提交标志
+let currentStrategyCode = null;  // 当前策略代码
 
 // DOM元素引用
 const elements = {
@@ -16,7 +17,11 @@ const elements = {
     sendBtn: null,
     chatHistory: null,
     agentStatusItems: null,
-    resultsPanel: null
+    resultsPanel: null,
+    strategyPanel: null,  // 新增：策略面板
+    closeStrategyBtn: null,  // 新增：关闭策略按钮
+    runBacktestBtn: null,  // 新增：运行回测按钮
+    strategyCode: null  // 新增：代码显示区域
 };
 
 // 应用程序类
@@ -42,6 +47,13 @@ class QuantTraderApp {
         elements.chatHistory = document.getElementById('chat-history');
         elements.agentStatusItems = document.querySelectorAll('.agent-status-item');
         elements.resultsPanel = document.getElementById('results-panel');
+
+        // 新增：策略面板相关元素
+        elements.strategyPanel = document.getElementById('strategy-panel');
+        elements.closeStrategyBtn = document.getElementById('close-strategy');
+        elements.runBacktestBtn = document.getElementById('run-backtest-btn');
+        elements.strategyCode = document.getElementById('strategy-code');
+        elements.resizer = document.getElementById('resizer');  // 新增：拖动分隔条
     }
 
     // 初始化事件监听器
@@ -71,6 +83,73 @@ class QuantTraderApp {
                 if (suggestion) {
                     elements.messageInput.value = suggestion;
                     this.sendMessage();
+                }
+            }
+        });
+
+        // 关闭策略面板按钮
+        elements.closeStrategyBtn?.addEventListener('click', () => {
+            this.closeStrategyPanel();
+        });
+
+        // 运行回测按钮
+        elements.runBacktestBtn?.addEventListener('click', () => {
+            this.runBacktest();
+        });
+
+        // 拖动分隔条调整布局
+        this.initResizer();
+    }
+
+    // 初始化分隔条拖动功能
+    initResizer() {
+        if (!elements.resizer) return;
+
+        let isResizing = false;
+        const contentWrapper = document.getElementById('content-wrapper');
+
+        // 从localStorage恢复上次的比例
+        const savedRatio = localStorage.getItem('panelRatio');
+        if (savedRatio && contentWrapper.classList.contains('with-strategy')) {
+            const leftPercent = parseFloat(savedRatio);
+            contentWrapper.style.gridTemplateColumns = `${leftPercent}% 4px 1fr`;
+        }
+
+        // 鼠标按下开始拖动
+        elements.resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            elements.resizer.classList.add('active');
+            e.preventDefault(); // 防止选中文本
+        });
+
+        // 鼠标移动调整宽度
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+
+            const containerRect = contentWrapper.getBoundingClientRect();
+            const newLeftWidth = e.clientX - containerRect.left;
+            const containerWidth = containerRect.width;
+            const leftPercent = (newLeftWidth / containerWidth) * 100;
+
+            // 限制最小宽度 (20% - 80%)
+            const clampedPercent = Math.max(20, Math.min(80, leftPercent));
+
+            // 更新grid布局
+            contentWrapper.style.gridTemplateColumns = `${clampedPercent}% 4px 1fr`;
+        });
+
+        // 鼠标松开停止拖动
+        document.addEventListener('mouseup', (e) => {
+            if (isResizing) {
+                isResizing = false;
+                elements.resizer.classList.remove('active');
+
+                // 保存当前比例
+                const computedStyle = getComputedStyle(contentWrapper);
+                const gridTemplateColumns = computedStyle.gridTemplateColumns;
+                const match = gridTemplateColumns.match(/^([\d.]+)%/);
+                if (match) {
+                    localStorage.setItem('panelRatio', match[1]);
                 }
             }
         });
@@ -317,6 +396,11 @@ class QuantTraderApp {
                     agent: data.ai_response.agent,
                     intent: data.ai_response.intent
                 });
+
+                // 如果包含策略代码，显示在右侧面板
+                if (data.ai_response.strategy_code) {
+                    this.showStrategyPanel(data.ai_response.strategy_code);
+                }
             } else if (data.error) {
                 // 显示错误信息
                 this.showError(data.error);
@@ -563,13 +647,180 @@ class QuantTraderApp {
     showError(message) {
         const toast = document.getElementById('errorToast');
         const toastBody = document.getElementById('errorToastBody');
-        
+
         if (toast && toastBody) {
             toastBody.textContent = message;
             const bsToast = new bootstrap.Toast(toast);
             bsToast.show();
         } else {
             alert(message);
+        }
+    }
+
+    // 显示策略面板
+    showStrategyPanel(code) {
+        console.log('🎯 显示策略面板');
+
+        // 保存代码
+        currentStrategyCode = code;
+
+        // 显示代码
+        if (elements.strategyCode) {
+            elements.strategyCode.textContent = code;
+            // 应用代码高亮
+            if (typeof hljs !== 'undefined') {
+                hljs.highlightElement(elements.strategyCode);
+            }
+        }
+
+        // 显示策略面板
+        if (elements.strategyPanel) {
+            elements.strategyPanel.classList.remove('hidden');
+        }
+
+        // 添加with-strategy类到主容器
+        const contentWrapper = document.getElementById('content-wrapper');
+        if (contentWrapper) {
+            contentWrapper.classList.add('with-strategy');
+        }
+    }
+
+    // 关闭策略面板
+    closeStrategyPanel() {
+        console.log('❌ 关闭策略面板');
+
+        // 隐藏策略面板
+        if (elements.strategyPanel) {
+            elements.strategyPanel.classList.add('hidden');
+        }
+
+        // 移除with-strategy类
+        const contentWrapper = document.getElementById('content-wrapper');
+        if (contentWrapper) {
+            contentWrapper.classList.remove('with-strategy');
+        }
+
+        // 清空代码
+        currentStrategyCode = null;
+        if (elements.strategyCode) {
+            elements.strategyCode.textContent = '';
+        }
+    }
+
+    // 运行回测
+    async runBacktest() {
+        if (!currentStrategyCode) {
+            this.showError('没有可运行的策略代码');
+            return;
+        }
+
+        console.log('🚀 开始运行回测...');
+
+        // 禁用按钮
+        if (elements.runBacktestBtn) {
+            elements.runBacktestBtn.disabled = true;
+            elements.runBacktestBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>回测中...';
+        }
+
+        try {
+            // 调用回测API
+            const response = await fetch('/api/backtest/run', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    conversation_id: currentConversationId,
+                    strategy_code: currentStrategyCode
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                console.log('✅ 回测完成');
+                this.displayBacktestResult(data.result);
+            } else {
+                this.showError(data.error || '回测失败');
+            }
+
+        } catch (error) {
+            console.error('❌ 回测失败:', error);
+            this.showError('回测失败: ' + error.message);
+        } finally {
+            // 恢复按钮
+            if (elements.runBacktestBtn) {
+                elements.runBacktestBtn.disabled = false;
+                elements.runBacktestBtn.innerHTML = '<i class="fas fa-play me-2"></i>运行回测';
+            }
+        }
+    }
+
+    // 显示回测结果
+    displayBacktestResult(result) {
+        console.log('📊 显示回测结果', result);
+
+        // 显示结果区域
+        const backtestResult = document.getElementById('backtest-result');
+        if (backtestResult) {
+            backtestResult.classList.remove('hidden');
+        }
+
+        // 更新指标
+        if (result.total_return !== undefined) {
+            const totalReturnEl = document.getElementById('total-return');
+            if (totalReturnEl) {
+                totalReturnEl.textContent = (result.total_return * 100).toFixed(2) + '%';
+            }
+        }
+
+        if (result.sharpe_ratio !== undefined) {
+            const sharpeRatioEl = document.getElementById('sharpe-ratio');
+            if (sharpeRatioEl) {
+                sharpeRatioEl.textContent = result.sharpe_ratio.toFixed(2);
+            }
+        }
+
+        if (result.max_drawdown !== undefined) {
+            const maxDrawdownEl = document.getElementById('max-drawdown');
+            if (maxDrawdownEl) {
+                maxDrawdownEl.textContent = (result.max_drawdown * 100).toFixed(2) + '%';
+            }
+        }
+
+        if (result.win_rate !== undefined) {
+            const winRateEl = document.getElementById('win-rate');
+            if (winRateEl) {
+                winRateEl.textContent = (result.win_rate * 100).toFixed(2) + '%';
+            }
+        }
+
+        // 显示交易记录
+        const tradesContainer = document.getElementById('trades-container');
+        if (tradesContainer && result.trades) {
+            tradesContainer.innerHTML = '';
+
+            if (result.trades.length === 0) {
+                tradesContainer.innerHTML = '<div class="text-center text-muted small">无交易记录</div>';
+            } else {
+                result.trades.forEach(trade => {
+                    const tradeEl = document.createElement('div');
+                    tradeEl.className = `trade-item trade-${trade.action}`;
+
+                    const actionText = trade.action === 'buy' ? '买入' : '卖出';
+                    const timeText = trade.time || '--';
+
+                    tradeEl.innerHTML = `
+                        <div class="trade-time">${timeText}</div>
+                        <div class="trade-action">${actionText} ${trade.symbol || ''}</div>
+                        <div>价格: ¥${trade.price?.toFixed(2) || '--'}</div>
+                        <div>数量: ${trade.quantity || '--'}</div>
+                        ${trade.profit !== undefined ? `<div>收益: ¥${trade.profit.toFixed(2)}</div>` : ''}
+                    `;
+
+                    tradesContainer.appendChild(tradeEl);
+                });
+            }
         }
     }
 }

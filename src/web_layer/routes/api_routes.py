@@ -137,7 +137,7 @@ def send_message():
                 user_input=message_content,
                 conversation_id=conversation_id
             )
-            
+
             if service_result["success"]:
                 # 创建AI回复消息
                 ai_message_id = str(uuid.uuid4())
@@ -151,13 +151,17 @@ def send_message():
                     'agent': ai_response.get("agent", "handler_agent"),
                     'intent': ai_response.get("intent", "unknown")
                 }
-                
+
+                # 如果包含策略代码，添加到响应中
+                if "strategy_code" in ai_response:
+                    ai_message["strategy_code"] = ai_response["strategy_code"]
+
                 messages[ai_message_id] = ai_message
-                
+
                 # 更新对话信息
                 conversations[conversation_id]['message_count'] += 2  # 用户消息+AI回复
                 conversations[conversation_id]['last_message_time'] = ai_message['timestamp']
-                
+
                 return jsonify({
                     'success': True,
                     'user_message_id': user_message_id,
@@ -206,4 +210,59 @@ def get_message_status(message_id):
         })
     
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/backtest/run', methods=['POST'])
+def run_backtest():
+    """运行回测（用户点击按钮后调用）- 恢复工作流执行"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
+
+        conversation_id = data.get('conversation_id')
+
+        if not conversation_id:
+            return jsonify({'error': '缺少对话ID'}), 400
+
+        print(f"🚀 收到回测确认请求 - 对话ID: {conversation_id}")
+
+        # 导入必要的模块
+        import sys
+        import asyncio
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent.parent
+        sys.path.insert(0, str(project_root))
+
+        from src.service_layer.agents.handler_agent import handler_agent
+
+        # 调用HandlerAgent继续执行回测（从checkpoint恢复）
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            result = loop.run_until_complete(
+                handler_agent.continue_backtest(conversation_id)
+            )
+        finally:
+            loop.close()
+
+        if result['success']:
+            print(f"✅ 回测完成")
+            return jsonify({
+                'success': True,
+                'ai_response': result['response'],
+                'conversation_id': conversation_id
+            })
+        else:
+            print(f"❌ 回测失败: {result.get('error')}")
+            return jsonify({
+                'success': False,
+                'error': result.get('error', '回测失败')
+            }), 500
+
+    except Exception as e:
+        print(f"❌ 回测异常: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500

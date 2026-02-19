@@ -1,0 +1,86 @@
+# Update Log
+
+## 2026-02-15
+
+### ✅ Completed
+- **CSV Debug Output**: Added CSV export to all 3 data tools with auto directory creation
+- **Log Verbosity**: Reduced logs, now show summaries and CSV paths only
+- **HandlerAgent Duplicate Execution**: Fixed redundant workflow execution by using LangGraph checkpoint auto-save
+- **Unified Data Format**: Standardized all tools to return `{"success": True, "extracted_data": {...}}` format
+  - Reduced ~100 lines of parsing logic in handler_agent
+
+### ❌ Known Issues (Not Fixed)
+- **Backtest Zero Trades**: Strategy uses hardcoded symbol, mismatch with actual data
+- **Sharpe Ratio Error**: Division by zero when no trades
+- **Symbol Passing**: `data_context` structure mismatch between handler and strategy agent
+
+### 📝 Notes
+- HandlerAgent-centric architecture confirmed correct for LangGraph
+
+---
+
+## 2026-02-17
+
+### ✅ Completed
+- **Double Execution**: Completely removed redundant `ainvoke()` call (handler_agent.py:604-612)
+- **Anti-Duplicate Submit**: Added `isSending` flag to frontend
+- **Dynamic Field Injection**: Strategy prompt now extracts actual field names from fetched data
+  - Example: Injects "vol (不是volume)" to prevent field name errors
+- **Markdown Rendering**: Frontend now parses AI replies with marked.js + DOMPurify
+  - Added CSS styles for headers, lists, code blocks, tables, emoji
+- **Strategy Flow Analysis**: Confirmed data passing and framework compliance
+
+### ❌ Known Issues (Not Fixed)
+- Strategy lacks error handling for data shortage (throws IndexError)
+- Sharpe ratio shows extreme values with zero trades
+
+---
+
+## 2026-02-18
+
+### ✅ Completed
+- **Flexible Frontend Layout**: Dynamic 70%/30% split when strategy code generated (default 100%)
+- **Workflow Pause & Resume**: User can review code before backtest, uses LangGraph checkpoint
+  - Added `user_confirmed_backtest` field to AgentState
+  - Conditional edge: `generate_strategy` → {`run_backtest` OR `generate_response`}
+- **Flexbox Scrolling Fix**: Added `min-height: 0` to allow child element scrolling
+- **Data Context Enhancement**: LLM receives statistical summary instead of generic "data fetched"
+  - Calculates: max/min price, returns, win rate, etc. from all records
+  - ~1KB summary vs ~15KB raw data
+
+### 📝 Architecture Decisions
+- **LangGraph Resume**: Chose workflow resume to maintain conversation state
+- **Statistical Summary**: Token-efficient and more meaningful than raw data
+
+### Files Modified
+- Frontend: `base.html`, `index.html`, `main.css`, `main.js`
+- Backend: `handler_agent.py`, `api_routes.py`
+
+---
+
+## 2026-02-19
+
+### ✅ Completed
+- **Resizable Split Panel**: Added draggable divider to freely adjust left/right ratio
+  - Default 70%/30% → User can drag to any proportion (20%-80% limits)
+  - Saves ratio to localStorage, restores when reopening strategy panel
+  - Three-column grid layout: `chat | resizer | code`
+  - Visual feedback: resizer turns blue on hover/active state
+
+### 🧪 Untested Features
+- **Backtest Button**: Click to run backtest (API endpoint ready, frontend button wired)
+  - Flow: User clicks → `/api/backtest/run` → HandlerAgent.continue_backtest()
+  - Expected: Display results in embedded `.backtest-result` panel
+
+### 💡 Future Considerations
+- **Reopen Strategy Panel**: Currently no way to reopen after closing (no "Show Code" button)
+  - Could add toggle button in chat or restore from conversation history
+
+---
+
+## Development Priority
+
+1. **HIGH**: Fix strategy robustness for data shortage
+2. **HIGH**: Fix Sharpe ratio calculation (zero-division)
+3. **MEDIUM**: Add warmup_period mechanism
+4. **LOW**: Add `is_data_ready()` helper method

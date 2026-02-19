@@ -33,6 +33,7 @@ class AgentState(TypedDict):
     # 回测相关
     strategy_code: Optional[str]  # 新增：生成的策略代码
     strategy_name: Optional[str]  # 新增：策略类名
+    user_confirmed_backtest: Optional[bool]  # 新增：用户是否确认执行回测
     backtest_result: Optional[Dict]  # 新增：回测结果
     backtest_summary: Optional[str]  # 新增：回测摘要
 
@@ -81,8 +82,8 @@ class HandlerAgent:
         workflow.add_node("format_output", self._format_output_node)
 
         # 添加节点（新增）
-        workflow.add_node("generate_strategy", self._generate_strategy_node)  # 新增！
-        workflow.add_node("run_backtest", self._run_backtest_node)  # 新增！
+        workflow.add_node("generate_strategy", self._generate_strategy_node)
+        workflow.add_node("run_backtest", self._run_backtest_node)
 
         # 定义流程
         workflow.add_edge(START, "parse_input")
@@ -99,7 +100,7 @@ class HandlerAgent:
             }
         )
 
-        # 条件分支2：数据获取后路由（核心！）
+        # 条件分支2：数据获取后路由
         workflow.add_conditional_edges(
             "fetch_data",
             self._route_after_data,
@@ -109,10 +110,18 @@ class HandlerAgent:
             }
         )
 
-        # 回测链路
-        workflow.add_edge("generate_strategy", "run_backtest")
-        workflow.add_edge("run_backtest", "generate_response")
+        # 回测链路：生成策略后需要用户确认才执行回测
+        # 使用条件边：如果state中有user_confirmed_backtest=True才执行回测，否则结束
+        workflow.add_conditional_edges(
+            "generate_strategy",
+            self._should_run_backtest,
+            {
+                "run_backtest": "run_backtest",
+                "end": "generate_response"  # 用户未确认，直接生成说明并结束
+            }
+        )
 
+        workflow.add_edge("run_backtest", "generate_response")
         workflow.add_edge("generate_response", "format_output")
         workflow.add_edge("format_output", END)
 
@@ -254,7 +263,16 @@ class HandlerAgent:
             return "generate_strategy"
         else:
             return "generate_response"
-    
+
+    def _should_run_backtest(self, state: AgentState) -> str:
+        """判断是否应该执行回测的条件函数"""
+        # 检查用户是否确认了回测
+        user_confirmed = state.get("user_confirmed_backtest", False)
+
+        print(f"🎯 回测决策: {'用户已确认，执行回测' if user_confirmed else '等待用户确认'}")
+
+        return "run_backtest" if user_confirmed else "end"
+
     async def _fetch_data_node(self, state: AgentState) -> AgentState:
         """数据获取节点"""
         try:
@@ -379,7 +397,7 @@ class HandlerAgent:
             return state
 
     async def _run_backtest_node(self, state: AgentState) -> AgentState:
-        """回测执行节点（新增）"""
+        """回测执行节点"""
         try:
             print("⚙️  执行回测...")
             state["current_step"] = "running_backtest"
@@ -444,7 +462,7 @@ class HandlerAgent:
             print(f"❌ 回测执行失败: {e}")
             state["error"] = f"回测执行异常: {str(e)}"
             return state
-    
+
     async def _generate_response_node(self, state: AgentState) -> AgentState:
         """生成回复节点"""
         try:
@@ -454,7 +472,7 @@ class HandlerAgent:
             intent = state.get("analysis_result", "general_question")
 
             # 如果有回测结果，优先展示
-            if intent == "backtest_request" and "backtest_summary" in state:
+            if intent == "backtest_request" and "backtest_summary" in state and state.get("backtest_result"):
                 summary = state["backtest_summary"]
 
                 # 简化：直接使用预格式化的摘要
@@ -470,25 +488,195 @@ class HandlerAgent:
                 print(f"💬 回测结果生成完成")
                 return state
 
+            # 如果是回测请求，已有策略代码，但还没有回测结果
+            # 生成策略说明（包含数据摘要），但不回测
+            if intent == "backtest_request" and state.get("strategy_code") and not state.get("backtest_result"):
+                print("📝 策略代码已生成，等待用户确认回测")
+
+                # 生成数据摘要
+                data_summary = ""
+                fetched_data = state.get("fetched_data", {})
+                if fetched_data and fetched_data.get("success"):
+                    data_list = fetched_data.get("data")
+                    if data_list and isinstance(data_list, list) and len(data_list) > 0:
+                        print(f"📊 检测到数据，准备格式化数据摘要...")
+
+                        # 计算统计指标
+                        import statistics as stats
+                        closes = [item.get('close', 0) for item in data_list if item.get('close')]
+                        highs = [item.get('high', 0) for item in data_list if item.get('high')]
+                        lows = [item.get('low', 0) for item in data_list if item.get('low')]
+                        pct_chgs = [item.get('pct_chg', 0) for item in data_list if item.get('pct_chg')]
+
+                        max_price = max(highs) if highs else 0
+                        min_price = min(lows) if lows else 0
+                        avg_close = stats.mean(closes) if closes else 0
+                        latest_close = closes[-1] if closes else 0
+                        first_close = closes[0] if closes else 0
+                        total_return = ((latest_close - first_close) / first_close * 100) if first_close > 0 else 0
+
+                        data_summary = f"""
+📊 **数据分析**
+- 数据量: {len(data_list)}条交易日
+- 价格区间: {min_price:.2f}元 - {max_price:.2f}元
+- 当前价格: {latest_close:.2f}元
+- 期间涨跌: {total_return:+.2f}%
+"""
+                        print(f"✅ 数据摘要生成完成")
+
+                strategy_name = state.get("strategy_name", "策略")
+                response_content = f"""## 📊 策略已生成完成
+
+**策略名称**: {strategy_name}
+
+{data_summary}我已为您生成了**双均线策略**代码，将在{len(data_list) if data_list else 0}条交易日数据上进行回测。
+
+### 📋 策略说明
+
+- **策略类型**: 基于双均线（短期MA和长期MA）的趋势跟踪策略
+- **代码位置**: 显示在右侧策略面板
+- **执行方式**: 点击右侧面板的"运行回测"按钮开始回测
+
+### ⚠️ 注意事项
+
+- 策略基于历史数据回测，不构成投资建议
+- 实盘交易需谨慎，建议先进行充分测试
+- 可根据实际情况调整策略参数（均线周期）
+
+准备就绪后，请点击右侧的**"运行回测"**按钮开始回测分析。
+"""
+                state["final_response"] = response_content
+                print(f"💬 策略说明生成完成")
+                return state
+
             # 根据意图调整提示词
             intent = state.get("analysis_result", "general_question")
 
+            # 检查是否有数据，如果有则格式化数据
+            fetched_data = state.get("fetched_data", {})
+            data_context = ""
+
+            if fetched_data and fetched_data.get("success"):
+                data_list = fetched_data.get("data")
+                if data_list and isinstance(data_list, list) and len(data_list) > 0:
+                    print(f"📊 检测到数据，准备格式化数据给LLM...")
+                    print(f"📊 数据条数: {len(data_list)}条")
+
+                    # 计算完整数据的统计指标
+                    import statistics as stats
+
+                    closes = [item.get('close', 0) for item in data_list if item.get('close')]
+                    highs = [item.get('high', 0) for item in data_list if item.get('high')]
+                    lows = [item.get('low', 0) for item in data_list if item.get('low')]
+                    volumes = [item.get('vol', 0) for item in data_list if item.get('vol')]
+                    pct_chgs = [item.get('pct_chg', 0) for item in data_list if item.get('pct_chg')]
+
+                    # 价格统计
+                    max_price = max(highs) if highs else 0
+                    min_price = min(lows) if lows else 0
+                    avg_close = stats.mean(closes) if closes else 0
+                    latest_close = closes[-1] if closes else 0
+                    first_close = closes[0] if closes else 0
+                    total_return = ((latest_close - first_close) / first_close * 100) if first_close > 0 else 0
+
+                    # 涨跌幅统计
+                    max_gain = max(pct_chgs) if pct_chgs else 0
+                    max_loss = min(pct_chgs) if pct_chgs else 0
+                    up_days = len([x for x in pct_chgs if x > 0])
+                    down_days = len([x for x in pct_chgs if x < 0])
+                    win_rate = (up_days / len(pct_chgs) * 100) if pct_chgs else 0
+
+                    # 成交量统计
+                    avg_volume = stats.mean(volumes) if volumes else 0
+                    max_volume = max(volumes) if volumes else 0
+
+                    # 找出最大涨跌幅的日期
+                    max_gain_idx = pct_chgs.index(max_gain) if pct_chgs else -1
+                    max_loss_idx = pct_chgs.index(max_loss) if pct_chgs else -1
+
+                    data_summary = f"""
+【完整数据统计】
+📊 数据量: {len(data_list)}条交易日数据
+📅 时间范围: {data_list[0].get('trade_date', 'N/A')} 至 {data_list[-1].get('trade_date', 'N/A')}
+
+【价格分析】
+• 期间最高价: {max_price:.2f}元
+• 期间最低价: {min_price:.2f}元
+• 平均收盘价: {avg_close:.2f}元
+• 期初价格: {first_close:.2f}元
+• 期末价格: {latest_close:.2f}元
+• 期间涨跌: {total_return:+.2f}%
+
+【涨跌幅统计】
+• 最大单日涨幅: {max_gain:.2f}% (日期: {data_list[max_gain_idx].get('trade_date', 'N/A') if max_gain_idx >= 0 else 'N/A'})
+• 最大单日跌幅: {max_loss:.2f}% (日期: {data_list[max_loss_idx].get('trade_date', 'N/A') if max_loss_idx >= 0 else 'N/A'})
+• 上涨天数: {up_days}天
+• 下跌天数: {down_days}天
+• 胜率(上涨占比): {win_rate:.1f}%
+
+【成交量分析】
+• 平均成交量: {avg_volume:.2f}手
+• 最大成交量: {max_volume:.2f}手 (日期: {data_list[volumes.index(max_volume)].get('trade_date', 'N/A') if max_volume in volumes else 'N/A'})
+
+【最近5个交易日详情】
+"""
+                    # 最近5天详细信息
+                    recent_5 = data_list[-5:] if len(data_list) >= 5 else data_list
+                    for i, item in enumerate(recent_5):
+                        trade_date = item.get('trade_date', 'N/A')
+                        open_price = item.get('open', 0)
+                        high = item.get('high', 0)
+                        low = item.get('low', 0)
+                        close = item.get('close', 0)
+                        volume = item.get('vol', 0)
+                        pct_chg = item.get('pct_chg', 0)
+
+                        data_summary += f"""
+{len(data_list) - len(recent_5) + i + 1}. {trade_date}
+   收盘: {close:.2f}元 ({pct_chg:+.2f}%) 成交量: {volume:.2f}手
+   振幅: {high-low:.2f}元 (开{open_price:.2f} 高{high:.2f} 低{low:.2f})
+"""
+
+                    data_context = data_summary
+                    print(f"✅ 数据统计摘要生成完成，长度: {len(data_context)}字符")
+
             if intent == "investment_analysis":
-                system_prompt = """你是一个专业的投资分析师。请基于用户的问题和之前的对话历史提供专业的投资建议和分析。
-                重点关注：基本面分析、技术面分析、市场趋势、投资风险等方面。请根据对话历史保持上下文连贯性。"""
+                system_prompt = f"""你是一个专业的投资分析师。请基于用户的问题和之前的对话历史提供专业的投资建议和分析。
+
+重点关注：基本面分析、技术面分析、市场趋势、投资风险等方面。请根据对话历史保持上下文连贯性。
+
+{data_context}
+
+请基于上述数据，进行具体的量化分析，包括：
+1. 具体的价格数据（开盘、收盘、最高、最低）
+2. 涨跌幅变化趋势
+3. 成交量变化
+4. 基于真实数据的投资建议"""
             elif intent == "risk_analysis":
-                system_prompt = """你是一个专业的风险管理专家。请重点分析投资风险，包括：
-                市场风险、信用风险、流动性风险、操作风险等，并提供风险控制建议。请根据对话历史保持上下文连贯性。"""
+                system_prompt = f"""你是一个专业的风险管理专家。请重点分析投资风险，包括：
+                市场风险、信用风险、流动性风险、操作风险等，并提供风险控制建议。请根据对话历史保持上下文连贯性。
+
+{data_context}
+
+请基于上述数据，分析具体的风险指标。"""
             elif intent == "data_analysis":
-                system_prompt = """你是一个专业的数据分析专家。请专注于市场数据分析、技术指标分析和数据可视化建议。
-                请根据对话历史保持上下文连贯性。"""
+                system_prompt = f"""你是一个专业的数据分析专家。请专注于市场数据分析、技术指标分析和数据可视化建议。
+                请根据对话历史保持上下文连贯性。
+
+{data_context}
+
+请基于上述数据，提供具体的数据分析结果。"""
             elif intent == "backtest_request":
                 system_prompt = """你是一个量化策略专家。请专注于投资策略的设计、回测分析和优化建议。
                 包括策略逻辑、历史表现、风险收益特征等。请根据对话历史保持上下文连贯性。"""
             else:
-                system_prompt = """你是一个友好的AI助手，专注于金融投资领域。
-                请根据用户问题和之前的对话历史提供有用的信息和建议，保持对话的连贯性。"""
-            
+                system_prompt = f"""你是一个友好的AI助手，专注于金融投资领域。
+                请根据用户问题和之前的对话历史提供有用的信息和建议，保持对话的连贯性。
+
+{data_context}
+
+请基于上述数据，回答用户的问题。"""
+
             # 构建消息列表 - 使用MessageManager优化消息历史
             raw_messages = [SystemMessage(content=system_prompt)] + state["messages"]
             
@@ -543,6 +731,11 @@ class HandlerAgent:
                 "agent": "handler_agent"
             }
 
+            # 如果有策略代码，添加到响应中
+            if state.get("strategy_code"):
+                formatted_response["strategy_code"] = state["strategy_code"]
+                print(f"📝 响应中包含策略代码，长度: {len(state['strategy_code'])}字符")
+
             state["final_response"] = formatted_response
 
             # 将AI回复添加到messages中，使checkpoint能够保存完整的对话历史
@@ -596,9 +789,10 @@ class HandlerAgent:
                 "needs_data": None,
                 "data_request": None,
                 "fetched_data": None,
-                # 回测相关（新增）
+                # 回测相关
                 "strategy_code": None,
                 "strategy_name": None,
+                "user_confirmed_backtest": None,  # 默认为None，等待用户确认
                 "backtest_result": None,
                 "backtest_summary": None,
                 "final_response": None,
@@ -637,7 +831,90 @@ class HandlerAgent:
                     "agent": "handler_agent"
                 }
             }
-    
+
+    async def continue_backtest(self, conversation_id: str) -> Dict[str, Any]:
+        """
+        继续执行回测（用户确认后调用）
+
+        Args:
+            conversation_id: 对话ID
+
+        Returns:
+            处理结果
+        """
+        try:
+            print(f"\n🔄 继续回测执行 - 对话ID: {conversation_id}")
+
+            # 配置thread_id用于恢复对话状态
+            config = {
+                "configurable": {
+                    "thread_id": conversation_id,
+                    "checkpoint_ns": "",
+                }
+            }
+
+            # 创建新的state，只设置确认标志
+            continue_state: AgentState = {
+                "messages": [],  # 不添加新消息，只是继续执行
+                "user_input": "",  # 无新输入
+                "conversation_id": conversation_id,
+                "current_step": "user_confirmed",
+                "analysis_result": None,
+                "needs_data": None,
+                "data_request": None,
+                "fetched_data": None,
+                # 关键：设置用户确认标志为True
+                "strategy_code": None,
+                "strategy_name": None,
+                "user_confirmed_backtest": True,  # ✅ 用户确认，触发回测
+                "backtest_result": None,
+                "backtest_summary": None,
+                "final_response": None,
+                "error": None
+            }
+
+            # 继续运行工作流（从checkpoint恢复）
+            result = await self.graph.ainvoke(continue_state, config=config)
+
+            if result.get("error"):
+                print(f"❌ 回测执行失败: {result['error']}")
+                return {
+                    "success": False,
+                    "error": result["error"],
+                    "response": result.get("final_response")
+                }
+            else:
+                print("✅ 回测执行完成")
+                return {
+                    "success": True,
+                    "response": {
+                        "content": result["final_response"],
+                        "backtest_summary": result.get("backtest_summary"),
+                        "backtest_result": result.get("backtest_result"),
+                        "timestamp": datetime.now().isoformat(),
+                        "conversation_id": conversation_id,
+                        "agent": "handler_agent"
+                    }
+                }
+
+        except Exception as e:
+            error_msg = f"回测执行异常: {str(e)}"
+            print(f"❌ {error_msg}")
+            import traceback
+            traceback.print_exc()
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "response": {
+                    "content": f"回测执行失败: {str(e)}",
+                    "error": error_msg,
+                    "timestamp": datetime.now().isoformat(),
+                    "conversation_id": conversation_id,
+                    "agent": "handler_agent"
+                }
+            }
+
 
 # 全局HandlerAgent实例
 handler_agent = HandlerAgent()
