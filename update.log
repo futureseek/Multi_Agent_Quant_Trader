@@ -78,6 +78,39 @@
 
 ---
 
+## 2026-02-20
+
+### ✅ Completed
+- **continue_backtest Method**: Fixed to resume from checkpoint instead of restarting workflow
+  - Uses `graph.aget_state()` to restore state, then directly executes nodes
+  - Prevents re-parsing empty user input that caused wrong intent detection
+- **Empty Message Filtering**: Added filter in MessageManager to remove messages with empty content
+  - Prevents "text content blocks must be non-empty" API error
+- **Type Injection for Strategy Code**: Pre-inject typing types (Dict, Optional, Any, List) in backtest_agent
+  - Allows LLM-generated code to run even if it forgets import statements
+- **Complete Backtest Results**: continue_backtest now returns full backtest_result and backtest_summary
+  - API route `/api/backtest/run` passes backtest_result to frontend
+  - Frontend displays metrics (return/sharpe/drawdown/win_rate) and trade records
+- **Backtest Button State Management**: Button stays disabled after clicking, shows "已回测" icon
+  - Prevents duplicate backtest execution
+  - Only re-enables on failure
+- **Enhanced Strategy Generation Prompt**: Explicitly requires complete import statements
+  - Added type annotation examples: `def on_bar(self, context: Any) -> Optional[Dict]`
+  - System prompt emphasizes importing: Dict, Optional, Any, List
+
+### 🧪 Untested Features
+- **Other Strategy Types**: Only dual moving average tested
+  - RSI/MACD/KDJ strategies not yet verified
+  - Complex indicators may need manual calculation logic
+
+### 🔧 TODO
+- **System Prompt Optimization**: Further improve LLM prompt quality for better code generation
+- **C++ Backtest Engine**: Replace Python backtest engine with high-performance C++ implementation
+  - Current Python engine is MVP for validation
+  - C++ engine will provide 10-100x performance improvement
+
+---
+
 ## Development Priority
 
 1. **HIGH**: Fix strategy robustness for data shortage
