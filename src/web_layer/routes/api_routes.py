@@ -252,6 +252,8 @@ def run_backtest():
             return jsonify({
                 'success': True,
                 'ai_response': result['response'],
+                'backtest_result': result.get('backtest_result'),
+                'backtest_summary': result.get('backtest_summary'),
                 'conversation_id': conversation_id
             })
         else:

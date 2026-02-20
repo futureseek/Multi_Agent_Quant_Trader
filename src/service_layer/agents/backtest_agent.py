@@ -114,12 +114,17 @@ class BacktestAgent:
             策略实例，如果加载失败返回None
         """
         try:
-            # 导入StrategyBase
+            # 导入必要的基类和类型
             from ..strategy.strategy_base import StrategyBase
+            from typing import Dict, Any, Optional, List
 
-            # 创建命名空间，预先注入StrategyBase
+            # 创建命名空间，预先注入常用类型
             namespace = {
                 "StrategyBase": StrategyBase,
+                "Dict": Dict,
+                "Any": Any,
+                "Optional": Optional,
+                "List": List,
                 "__builtins__": __builtins__
             }
 

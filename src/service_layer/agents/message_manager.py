@@ -153,16 +153,27 @@ class MessageManager:
     def optimize_messages(self, messages: List[BaseMessage]) -> List[BaseMessage]:
         """
         优化消息列表，控制增长
-        
+
         Args:
             messages: 原始消息列表
-            
+
         Returns:
             优化后的消息列表
         """
         if not messages:
             return messages
-        
+
+        # 过滤掉content为空的消息
+        filtered_messages = [
+            msg for msg in messages
+            if msg.content and str(msg.content).strip()
+        ]
+
+        if len(filtered_messages) < len(messages):
+            print(f"⚠️  过滤了 {len(messages) - len(filtered_messages)} 条空消息")
+
+        messages = filtered_messages
+
         print(f"📊 消息优化前: {len(messages)}条消息, {self.count_total_tokens(messages)}个tokens")
         
         # 1. 首先检查数量限制

@@ -836,6 +836,8 @@ class HandlerAgent:
         """
         继续执行回测（用户确认后调用）
 
+        直接从checkpoint恢复state并执行回测，不重新走workflow
+
         Args:
             conversation_id: 对话ID
 
@@ -853,49 +855,52 @@ class HandlerAgent:
                 }
             }
 
-            # 创建新的state，只设置确认标志
-            continue_state: AgentState = {
-                "messages": [],  # 不添加新消息，只是继续执行
-                "user_input": "",  # 无新输入
-                "conversation_id": conversation_id,
-                "current_step": "user_confirmed",
-                "analysis_result": None,
-                "needs_data": None,
-                "data_request": None,
-                "fetched_data": None,
-                # 关键：设置用户确认标志为True
-                "strategy_code": None,
-                "strategy_name": None,
-                "user_confirmed_backtest": True,  # ✅ 用户确认，触发回测
-                "backtest_result": None,
-                "backtest_summary": None,
-                "final_response": None,
-                "error": None
-            }
+            # 获取当前checkpoint的state
+            current_state = await self.graph.aget_state(config)
+            print(f"📥 从checkpoint恢复state，当前步骤: {current_state.values.get('current_step', 'unknown')}")
 
-            # 继续运行工作流（从checkpoint恢复）
-            result = await self.graph.ainvoke(continue_state, config=config)
-
-            if result.get("error"):
-                print(f"❌ 回测执行失败: {result['error']}")
+            # 检查是否有策略代码
+            if not current_state.values.get("strategy_code"):
+                error_msg = "未找到策略代码，无法执行回测"
+                print(f"❌ {error_msg}")
                 return {
                     "success": False,
-                    "error": result["error"],
-                    "response": result.get("final_response")
+                    "error": error_msg
                 }
-            else:
-                print("✅ 回测执行完成")
+
+            # 直接执行回测节点（不经过workflow）
+            print(f"🎯 直接执行回测节点...")
+
+            # 创建包含必要信息的state
+            backtest_state = AgentState(current_state.values)
+            backtest_state["user_confirmed_backtest"] = True  # 设置确认标志
+
+            # 依次执行：run_backtest → generate_response → format_output
+            backtest_state = await self._run_backtest_node(backtest_state)
+
+            if backtest_state.get("error"):
+                print(f"❌ 回测执行失败: {backtest_state['error']}")
                 return {
-                    "success": True,
-                    "response": {
-                        "content": result["final_response"],
-                        "backtest_summary": result.get("backtest_summary"),
-                        "backtest_result": result.get("backtest_result"),
-                        "timestamp": datetime.now().isoformat(),
-                        "conversation_id": conversation_id,
-                        "agent": "handler_agent"
-                    }
+                    "success": False,
+                    "error": backtest_state["error"],
+                    "response": backtest_state.get("final_response")
                 }
+
+            backtest_state = await self._generate_response_node(backtest_state)
+            backtest_state = await self._format_output_node(backtest_state)
+
+            # 更新checkpoint
+            await self.graph.aupdate_state(config, backtest_state)
+
+            print("✅ 回测执行完成")
+
+            # 返回完整结果
+            return {
+                "success": True,
+                "response": backtest_state["final_response"],
+                "backtest_result": backtest_state.get("backtest_result"),
+                "backtest_summary": backtest_state.get("backtest_summary")
+            }
 
         except Exception as e:
             error_msg = f"回测执行异常: {str(e)}"

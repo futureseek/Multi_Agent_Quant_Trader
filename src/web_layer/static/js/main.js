@@ -739,16 +739,43 @@ class QuantTraderApp {
 
             if (data.success) {
                 console.log('✅ 回测完成');
-                this.displayBacktestResult(data.result);
+
+                // 按钮保持禁用状态，显示"已回测"
+                if (elements.runBacktestBtn) {
+                    elements.runBacktestBtn.innerHTML = '<i class="fas fa-check me-2"></i>已回测';
+                    // 不恢复disabled，保持禁用
+                }
+
+                // 显示回测结果（如果后端返回了结果数据）
+                if (data.backtest_result) {
+                    this.displayBacktestResult(data.backtest_result);
+                }
+
+                // 显示AI回复消息到聊天区域
+                if (data.ai_response) {
+                    this.displayMessage({
+                        role: 'assistant',
+                        content: data.ai_response.content || data.ai_response,
+                        timestamp: new Date().toISOString(),
+                        agent: 'handler_agent',
+                        intent: 'backtest_result'
+                    });
+                }
             } else {
                 this.showError(data.error || '回测失败');
+
+                // 失败时恢复按钮
+                if (elements.runBacktestBtn) {
+                    elements.runBacktestBtn.disabled = false;
+                    elements.runBacktestBtn.innerHTML = '<i class="fas fa-play me-2"></i>运行回测';
+                }
             }
 
         } catch (error) {
             console.error('❌ 回测失败:', error);
             this.showError('回测失败: ' + error.message);
-        } finally {
-            // 恢复按钮
+
+            // 异常时恢复按钮
             if (elements.runBacktestBtn) {
                 elements.runBacktestBtn.disabled = false;
                 elements.runBacktestBtn.innerHTML = '<i class="fas fa-play me-2"></i>运行回测';

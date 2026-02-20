@@ -112,15 +112,21 @@ class StrategyAgent:
 策略代码要求：
 1. 必须继承自StrategyBase类
 2. 必须实现on_bar(self, context)方法
-3. 使用context对象访问数据和下单：
+3. ⚠️ 必须包含完整的导入语句：
+   ```python
+   from src.service_layer.strategy.strategy_base import StrategyBase
+   from typing import Dict, Optional, Any, List
+   ```
+4. 使用context对象访问数据和下单：
    - context.get_bar(symbol, field, offset): 获取单根K线
    - context.get_series(symbol, field, count): 获取序列数据
    - context.buy(symbol, quantity, price): 下买单
    - context.sell(symbol, quantity, price): 下卖单
    - context.get_cash(): 获取可用资金
    - context.get_position(symbol): 获取持仓
-4. 策略逻辑清晰，有适当注释
-5. 处理边界情况（数据不足返回None）
+5. 策略逻辑清晰，有适当注释
+6. 处理边界情况（数据不足返回None）
+7. on_bar方法返回类型应为 Optional[Dict]
 
 策略类型参考：
 - 均线策略：MA、EMA、双均线金叉死叉
@@ -128,7 +134,7 @@ class StrategyAgent:
 - 价格形态：突破、反转、形态识别
 - 量价策略：成交量突破、缩量上涨
 
-只输出Python代码，不要markdown标记，不要任何文字说明。
+⚠️ 重要：只输出Python代码，不要markdown标记，不要任何文字说明。
 """
 
     def _build_strategy_prompt(self, user_request: str, data_context: Optional[Dict]) -> str:
@@ -182,94 +188,89 @@ class StrategyAgent:
 示例格式（均线金叉策略）:
 ```python
 from src.service_layer.strategy.strategy_base import StrategyBase
-from typing import Dict, Optional
+from typing import Dict, Optional, Any, List
 
 class MAStrategy(StrategyBase):
     \"\"\"双均线策略：短期均线上穿长期均线买入，下穿卖出\"\"\"
-    
-    def __init__(self, short=5, long=20):
+
+    def __init__(self, short: int = 5, long: int = 20):
         super().__init__()
         self.short = short
         self.long = long
         self.prev_short_ma = None
         self.prev_long_ma = None
 
-    def on_bar(self, context):
+    def on_bar(self, context: Any) -> Optional[Dict]:
+        \"\"\"每根K线回调函数\"\"\"
         # 获取当前股票代码 (可根据用户需求调整)
         symbol = '600000.SH'
-        
+
         try:
             # 获取当前价格
             current_price = context.get_bar(symbol, 'close', 0)
-            
+
             # 获取短期和长期均线数据
             short_series = context.get_series(symbol, 'close', self.short)
             long_series = context.get_series(symbol, 'close', self.long)
-            
+
             # 数据不足时跳过
             if len(short_series) < self.short or len(long_series) < self.long:
                 return None
-                
+
             # 计算均线值
             short_ma = sum(short_series) / len(short_series)
             long_ma = sum(long_series) / len(long_series)
-            
+
             # 金叉买入信号
-            if (self.prev_short_ma is not None and 
+            if (self.prev_short_ma is not None and
                 self.prev_long_ma is not None and
-                self.prev_short_ma <= self.prev_long_ma and 
-                short_ma > long_ma and 
+                self.prev_short_ma <= self.prev_long_ma and
+                short_ma > long_ma and
                 context.get_cash() > 0):
-                
+
                 # 计算买入量 (使用可用资金的90%)
                 cash = context.get_cash()
                 quantity = int(cash * 0.9 / current_price / 100) * 100  # 整百股
-                
+
                 if quantity >= 100:
-                    order = {
+                    return {
                         'action': 'buy',
                         'symbol': symbol,
                         'quantity': quantity,
                         'price': current_price
                     }
-                    self.prev_short_ma = short_ma
-                    self.prev_long_ma = long_ma
-                    return order
-            
+
             # 死叉卖出信号
-            elif (self.prev_short_ma is not None and 
+            elif (self.prev_short_ma is not None and
                   self.prev_long_ma is not None and
-                  self.prev_short_ma >= self.prev_long_ma and 
-                  short_ma < long_ma and 
+                  self.prev_short_ma >= self.prev_long_ma and
+                  short_ma < long_ma and
                   context.get_position(symbol) > 0):
-                
+
                 # 卖出全部持仓
                 position = context.get_position(symbol)
-                order = {
+                return {
                     'action': 'sell',
                     'symbol': symbol,
                     'quantity': -position,
                     'price': current_price
                 }
-                self.prev_short_ma = short_ma
-                self.prev_long_ma = long_ma
-                return order
-            
+
             # 更新前一根K线的均线值
             self.prev_short_ma = short_ma
             self.prev_long_ma = long_ma
-            
+
         except (IndexError, KeyError):
             # 数据异常时跳过
             return None
-            
+
         return None
 ```
 
-请严格按照这个格式生成代码，必须包含：
-1. 正确的import语句
-2. 继承StrategyBase的类定义  
-3. 完整的on_bar方法实现
+⚠️ 请严格按照上述格式生成代码，必须包含：
+1. **完整的导入语句**（必须包含 Dict, Optional, Any, List）
+2. 继承StrategyBase的类定义
+3. 完整的on_bar方法实现，带正确的类型注解
 4. 适当的错误处理和边界条件检查
 5. 合理的交易逻辑
 """
