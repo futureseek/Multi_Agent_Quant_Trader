@@ -47,7 +47,7 @@ class HandlerAgent:
         """初始化HandlerAgent"""
         # Agent名称
         self.name = "handler_agent"
-        
+
         # 获取配置信息
         print(self.name)
         agent_config = config_manager.get_model_config(self.name)
@@ -59,13 +59,17 @@ class HandlerAgent:
         )
         # 初始化内存checkpointer
         self.checkpointer = InMemorySaver()
-        
+
         # 获取系统提示词
         self.system_prompt = config_manager.get_prompt_config(self.name)
-        
+
         # 初始化消息管理器
         self.message_manager = MessageManager()
-        
+
+        # 初始化RAG组件（懒加载，避免启动时初始化失败）
+        self.rag_query_agent = None
+        self.vector_store = None
+
         self.graph = self._build_graph()
         print(f"✅ HandlerAgent 初始化完成 - 模型: {agent_config['model_name']}")
     
@@ -84,18 +88,20 @@ class HandlerAgent:
         # 添加节点（新增）
         workflow.add_node("generate_strategy", self._generate_strategy_node)
         workflow.add_node("run_backtest", self._run_backtest_node)
+        workflow.add_node("rag_query", self._rag_query_node)  # 新增：RAG查询节点
 
         # 定义流程
         workflow.add_edge(START, "parse_input")
         workflow.add_edge("parse_input", "analyze_intent")
         workflow.add_edge("analyze_intent", "check_data_need")
 
-        # 条件分支1：是否需要数据
+        # 条件分支1：是否需要数据（包含RAG分支）
         workflow.add_conditional_edges(
             "check_data_need",
             self._should_fetch_data,
             {
                 "fetch_data": "fetch_data",
+                "rag_query": "rag_query",  # 新增：RAG查询分支
                 "generate_response": "generate_response"
             }
         )
@@ -122,6 +128,7 @@ class HandlerAgent:
         )
 
         workflow.add_edge("run_backtest", "generate_response")
+        workflow.add_edge("rag_query", "generate_response")  # 新增：RAG查询后生成响应
         workflow.add_edge("generate_response", "format_output")
         workflow.add_edge("format_output", END)
 
@@ -151,27 +158,31 @@ class HandlerAgent:
         try:
             print("🧠 分析用户意图...")
             state["current_step"] = "analyzing_intent"
-            
+
             # 这里可以添加更复杂的意图分析逻辑
             # 目前先做简单的关键词分析
             user_input = state["user_input"].lower()
 
-            if any(keyword in user_input for keyword in ["回测", "策略", "收益", "夏普", "绩效"]):
+            # RAG查询关键词（优先级最高，统一入口）
+            rag_keywords = ["选股", "筛选", "找", "推荐", "什么是", "主营", "业务", "介绍", "哪些", "市值", "市盈率", "市净率"]
+            if any(keyword in user_input for keyword in rag_keywords):
+                intent = "rag_query"
+            elif any(keyword in user_input for keyword in ["回测", "策略", "收益", "夏普", "绩效"]):
                 intent = "backtest_request"
             elif any(keyword in user_input for keyword in ["股票", "投资", "分析"]):
                 intent = "investment_analysis"
             elif any(keyword in user_input for keyword in ["风险", "回撤", "波动"]):
                 intent = "risk_analysis"
-            elif any(keyword in user_input for keyword in ["选股", "筛选", "数据"]):
+            elif any(keyword in user_input for keyword in ["数据"]):
                 intent = "data_analysis"
             else:
                 intent = "general_question"
-            
+
             state["analysis_result"] = intent
             print(f"🎯 识别意图: {intent}")
-            
+
             return state
-            
+
         except Exception as e:
             print(f"❌ 意图分析失败: {e}")
             state["error"] = f"意图分析失败: {str(e)}"
@@ -182,10 +193,16 @@ class HandlerAgent:
         try:
             print("🤖 AI智能判断是否需要获取数据...")
             state["current_step"] = "checking_data_need"
-            
-            # 先检查用户意图，对于回测请求强制需要数据
+
+            # 先检查用户意图
             intent = state.get("analysis_result", "")
-            
+
+            # RAG查询不需要获取实时数据（直接从向量库查询）
+            if intent == "rag_query":
+                print("🎯 检测到RAG查询，不需要获取实时数据")
+                state["needs_data"] = False
+                return state
+
             if intent == "backtest_request":
                 # 回测请求必须获取数据，传递用户原始输入让DataServiceAgent解析
                 print("🎯 检测到回测请求，强制获取数据")
@@ -249,7 +266,14 @@ class HandlerAgent:
     
     def _should_fetch_data(self, state: AgentState) -> str:
         """判断是否应该获取数据的条件函数"""
+        intent = state.get("analysis_result", "")
         needs_data = state.get("needs_data", False)
+
+        # RAG查询直接跳到RAG节点，不需要获取实时数据
+        if intent == "rag_query":
+            print(f"🎯 路由决策: RAG查询")
+            return "rag_query"
+
         print(f"🎯 路由决策: {'获取数据' if needs_data else '直接回复'}")
         return "fetch_data" if needs_data else "generate_response"
 
@@ -919,6 +943,102 @@ class HandlerAgent:
                     "agent": "handler_agent"
                 }
             }
+
+    def _init_rag_component(self):
+        """初始化RAG组件（懒加载）"""
+        if self.rag_query_agent is not None:
+            return  # 已初始化
+
+        try:
+            print("🔧 初始化RAG组件...")
+
+            from ..rag.vector_store import StockVectorStore
+            from ..rag.data_collector import StockDataCollector
+            from .rag_query_agent import RAGQueryAgent
+
+            # 获取Tushare token（使用项目根目录的绝对路径）
+            import json
+            import os
+
+            # 获取项目根目录
+            # handler_agent.py 位置: src/service_layer/agents/
+            # 需要向上一: service_layer/, 再向上一: src/, 再向上一: 项目根目录
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+            config_path = os.path.join(project_root, 'config', 'api_config.json')
+
+            with open(config_path, 'r', encoding='utf-8') as f:
+                api_config = json.load(f)
+
+            tushare_token = api_config.get("tushare_api", "")
+            if not tushare_token:
+                print("⚠️ 未找到Tushare API token，RAG功能将不可用")
+                return
+
+            # 初始化向量存储（使用项目根目录的统一路径）
+            persist_dir = os.path.join(project_root, 'data', 'chroma_db')
+            print(f"📂 RAG数据路径: {persist_dir}")
+
+            self.vector_store = StockVectorStore(
+                persist_dir=persist_dir
+            )
+
+            # 初始化RAG查询Agent
+            self.rag_query_agent = RAGQueryAgent(
+                vector_store=self.vector_store,
+                llm=self.llm
+            )
+
+            print("✅ RAG组件初始化完成")
+
+        except Exception as e:
+            print(f"❌ RAG组件初始化失败: {e}")
+            print("⚠️ RAG功能将不可用，但其他功能正常")
+            self.rag_query_agent = None
+            self.vector_store = None
+
+    async def _rag_query_node(self, state: AgentState) -> AgentState:
+        """RAG查询节点 - 统一处理选股和问答"""
+        try:
+            print("🔍 执行RAG查询...")
+            state["current_step"] = "rag_query"
+
+            user_input = state["user_input"]
+
+            # 懒加载RAG组件
+            self._init_rag_component()
+
+            # 检查RAG组件是否可用
+            if self.rag_query_agent is None:
+                state["final_response"] = "⚠️ RAG功能未初始化，请检查配置文件中的Tushare API token是否正确配置。"
+                return state
+
+            # 调用RAGQueryAgent（统一入口）
+            result = self.rag_query_agent.query(
+                user_input=user_input,
+                top_k=10
+            )
+
+            if result["success"]:
+                # 使用RAGQueryAgent的格式化方法
+                formatted_response = self.rag_query_agent.format_result_for_display(
+                    query_result=result,
+                    user_input=user_input
+                )
+                state["final_response"] = formatted_response
+            else:
+                error_msg = result.get('error', '未知错误')
+                state["final_response"] = f"❌ RAG查询失败: {error_msg}"
+
+            return state
+
+        except Exception as e:
+            print(f"❌ RAG查询失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+            state["final_response"] = f"❌ RAG查询异常: {str(e)}\n\n提示：如果是首次使用，请先运行数据初始化脚本构建向量知识库。"
+            return state
 
 
 # 全局HandlerAgent实例

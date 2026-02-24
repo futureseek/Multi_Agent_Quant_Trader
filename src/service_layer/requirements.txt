@@ -44,4 +44,8 @@ tiktoken==0.7.0
 orjson==3.11.5
 jsonpatch==1.33
 
+# === RAG功能依赖 ===
+chromadb==0.4.22
+sentence-transformers
+
 #

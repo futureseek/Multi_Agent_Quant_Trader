@@ -111,9 +111,88 @@
 
 ---
 
+## 2026-02-23
+
+### ✅ Completed
+- **RAG Architecture**: Designed and implemented RAG (Retrieval-Augmented Generation) functionality
+  - Created unified `RAGQueryAgent` for stock selection and knowledge Q&A (LLM auto-detects query type)
+  - Added vector storage module (`rag/vector_store.py`) with ChromaDB integration
+  - Added data collector module (`rag/data_collector.py`) for Tushare data fetching
+  - Modified `handler_agent.py` to add RAG query branch (non-intrusive, doesn't affect existing backtest flow)
+- **Dependencies**: Added chromadb==0.4.22 and sentence-transformers to requirements.txt
+  - Removed unnecessary beautifulsoup4 and lxml (Phase 3 features, not needed for MVP)
+- **Data Initialization**: Created `scripts/init_rag_db.py` for one-time vector database setup
+- **Testing Framework**: Added `tests/test_data_collector.py` for module-level testing (limited data fetch)
+
+### 📁 Files Created
+- `src/service_layer/rag/__init__.py`
+- `src/service_layer/rag/vector_store.py` (ChromaDB wrapper, ~240 lines)
+- `src/service_layer/rag/data_collector.py` (Tushare integration, ~180 lines)
+- `src/service_layer/agents/rag_query_agent.py` (Unified query agent, ~200 lines)
+- `scripts/init_rag_db.py` (Database initialization script)
+- `tests/test_data_collector.py` (Module test script)
+
+### 📝 Notes
+- **Lazy Loading**: RAG components initialize on first query to avoid startup failures
+- **Fault Isolation**: RAG initialization failure doesn't affect other system features
+- **Intent Detection**: Added keywords: 选股, 筛选, 找, 推荐, 什么是, 主营, 业务, 介绍, 哪些, 市值, 市盈率, 市净率
+- **Architecture Decision**: Unified RAGQueryAgent instead of separate StockSelectionAgent + KnowledgeQueryAgent
+  - Reduced ~400 lines of duplicate code
+  - Simplified routing logic
+  - LLM auto-determines return format (stock list or natural language answer)
+
+### 🧪 Untested
+- **Full System Integration**: RAG query flow not yet tested end-to-end
+- **Vector Database Performance**: Not tested with full dataset (~5000 stocks)
+- **Embedding Quality**: text2vec-base-chinese model not yet validated
+- **LLM Response Parsing**: JSON format parsing not tested with real LLM outputs
+
+### 🔧 TODO
+- Run `pip install sentence-transformers` (CPU version recommended for non-GPU systems)
+- Execute `python scripts/init_rag_db.py` to build vector database
+- Test RAG queries: "找市盈率小于15的银行股", "平安银行属于什么行业？"
+- Consider incremental data updates for daily financial metrics
+
+---
+
 ## Development Priority
 
-1. **HIGH**: Fix strategy robustness for data shortage
-2. **HIGH**: Fix Sharpe ratio calculation (zero-division)
-3. **MEDIUM**: Add warmup_period mechanism
-4. **LOW**: Add `is_data_ready()` helper method
+1. **HIGH**: Test RAG functionality end-to-end
+2. **HIGH**: Fix strategy robustness for data shortage
+3. **HIGH**: Fix Sharpe ratio calculation (zero-division)
+4. **MEDIUM**: Add warmup_period mechanism
+5. **LOW**: Add `is_data_ready()` helper method
+
+---
+
+## 2026-02-24
+
+### ✅ Completed
+- **RAG Full Implementation**: Complete RAG (Retrieval-Augmented Generation) functionality
+  - End-to-end testing: vector retrieval → LLM generation → user response
+  - Verified query: "深圳有哪些银行股？" successfully returned stock list with accurate data
+  - Data statistics: 9,225 documents (5,484 basic info + 3,741 financial records)
+- **ChromaDB Migration**: Updated from deprecated `Settings` to `PersistentClient` API
+- **HuggingFace Mirror**: Added `HF_ENDPOINT` environment variable support for China network
+  - Fixed model download issues (text2vec-base-chinese, ~400MB)
+- **Path Configuration**: Unified all paths to use project root absolute paths
+  - Fixed `init_rag_db.py`, `verify_rag_data.py`, `handler_agent.py`
+  - Vector DB location: `/data/chroma_db` (project root)
+- **Testing Scripts**:
+  - `tests/test_vector_store.py`: Verified embedding, document addition, semantic search
+  - `tests/verify_rag_data.py`: Cross-collection retrieval validation
+
+### 📝 Notes
+- **RAG Flow Verified**:
+  1. Intent detection (`rag_query`)
+  2. Vector retrieval (60 relevant documents found)
+  3. Context injection into prompt
+  4. LLM generates structured response (JSON)
+  5. Formatted display in web UI
+- **Semantic Quality**: Query "深圳的银行" correctly returns 平安银行 (71.63% similarity)
+- **Lazy Loading**: RAG components initialize on first use, doesn't affect startup time
+
+### 🔧 TODO
+- **Prompt Optimization**: Improve RAG response formatting for data-heavy queries
+  - Current issue: Raw JSON data visible in web responses
+  - Required: Format/tabulate data before display, hide raw JSON structures
