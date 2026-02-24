@@ -29,6 +29,19 @@ api_config.json文件，写入以下内容：
 
 ```
 
+## 初始化
+```shell
+# 进入scripts目录,初始化数据库
+python init_rag_db.py
+# 进入到service_layer 和 web_layer，根据目录下的README操作配置环境(requirement.txt)
+```
+
+## 运行
+```shell
+# 进入src/web_layer目录,具体可以看该目录下的readme
+python app.py
+```
+
 
 
 > **2025 本科毕业设计课题** 
@@ -89,8 +102,7 @@ Multi-Agent-Quant-Trader/
 │       ├── rag/            # 向量检索与 News 处理
 │       └── main.py         # 系统入口
 ├── tests/                  # 测试用例
-│   ├── cpp_tests/          # GoogleTest 单元测试
-│   └── python_tests/       # PyTest 流程测试
 ├── CMakeLists.txt          # C++ 构建脚本
 └── README.md
+└── update.log              # 更新日志
 ```
