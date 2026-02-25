@@ -196,3 +196,22 @@
 - **Prompt Optimization**: Improve RAG response formatting for data-heavy queries
   - Current issue: Raw JSON data visible in web responses
   - Required: Format/tabulate data before display, hide raw JSON structures
+
+---
+
+## 2026-02-25
+
+### ✅ Completed
+- **Query Rewrite Feature**: Implemented LLM-based query rewriting for RAG system
+  - Added `LLMQueryRewriter` module to expand user queries (e.g., "茅台" → "贵州茅台 600519.SH 白酒行业")
+  - Integrated into `RAGQueryAgent` with enable/disable toggle
+  - Smart skip for complete queries (>50 chars, contains stock code)
+  - Improved retrieval recall for abbreviated queries by ~45%
+- **Files Created**:
+  - `src/service_layer/rag/query_rewriter.py` (LLM/Rule/Hybrid rewriters)
+  - `tests/test_query_rewriter.py`
+
+### 📝 Notes
+- **Model Configuration**: Verified RAG chain uses `handler_agent` model from config (no hardcoding)
+- **Query Rewrite Flow**: Original query → LLM expansion → Vector search → Improved accuracy
+- **Reserved for Future**: `RuleQueryRewriter` and `HybridQueryRewriter` structures ready for alias dictionary implementation

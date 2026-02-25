@@ -11,16 +11,29 @@ import json
 class RAGQueryAgent:
     """RAG查询Agent - 统一处理选股和问答"""
 
-    def __init__(self, vector_store, llm):
+    def __init__(self, vector_store, llm, enable_query_rewrite: bool = True):
         """
         初始化RAG查询Agent
 
         Args:
             vector_store: StockVectorStore实例
             llm: LLM实例（支持invoke方法）
+            enable_query_rewrite: 是否启用查询改写（默认True）
         """
         self.vector_store = vector_store
         self.llm = llm
+        self.enable_query_rewrite = enable_query_rewrite
+
+        # 初始化查询改写器
+        self.query_rewriter = None
+        if enable_query_rewrite:
+            try:
+                from ..rag.query_rewriter import LLMQueryRewriter
+                self.query_rewriter = LLMQueryRewriter(llm)
+            except ImportError as e:
+                print(f"⚠️ 查询改写模块导入失败: {e}")
+                self.enable_query_rewrite = False
+
         print("✅ RAGQueryAgent初始化完成")
 
     def query(self, user_input: str, top_k: int = 10) -> Dict[str, Any]:
@@ -45,9 +58,14 @@ class RAGQueryAgent:
             print(f"🔍 RAG查询: {user_input}")
             print(f"{'='*60}")
 
+            # 0. 【新增】查询改写（如果启用）
+            search_query = user_input
+            if self.query_rewriter:
+                search_query = self.query_rewriter.rewrite(user_input, enable=self.enable_query_rewrite)
+
             # 1. 向量检索（跨所有collection）
             search_results = self.vector_store.search(
-                query=user_input,
+                query=search_query,  # 使用改写后的查询
                 collection_names=None,  # 全部collection
                 top_k=top_k * 3  # 多检索一些给LLM筛选
             )
