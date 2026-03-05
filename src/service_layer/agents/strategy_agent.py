@@ -140,6 +140,12 @@ class StrategyAgent:
     def _build_strategy_prompt(self, user_request: str, data_context: Optional[Dict]) -> str:
         """构建策略生成提示词"""
 
+        # 提取实际的股票代码
+        actual_symbol = "600000.SH"  # 默认值
+        if data_context:
+            extracted_data = data_context.get("extracted_data", {})
+            actual_symbol = extracted_data.get("ts_code", "600000.SH")
+
         prompt = f"""
 用户需求: {user_request}
 """
@@ -153,10 +159,11 @@ class StrategyAgent:
             if data_list:
                 # 从第一条数据中提取字段
                 available_fields = list(data_list[0].keys())
+                fields_str = ', '.join(available_fields)  # 先计算，避免f-string中的引号冲突
 
                 prompt += f"""
 
-可用数据字段: {', '.join(available_fields)}
+可用数据字段: {fields_str}
 
 ⚠️ 重要字段说明:
 - close: 收盘价
@@ -181,8 +188,8 @@ class StrategyAgent:
 - 时间范围: {data_context.get('date_range', 'N/A')}
 """
 
-        prompt += """
-
+        # 添加策略代码示例（使用普通字符串拼接，避免f-string复杂性）
+        example_code = f"""
 请生成对应的交易策略代码。策略应该清晰、可执行、有良好的注释。
 
 示例格式（均线金叉策略）:
@@ -202,8 +209,8 @@ class MAStrategy(StrategyBase):
 
     def on_bar(self, context: Any) -> Optional[Dict]:
         \"\"\"每根K线回调函数\"\"\"
-        # 获取当前股票代码 (可根据用户需求调整)
-        symbol = '600000.SH'
+        # 使用实际回测的股票代码
+        symbol = \"{actual_symbol}\"
 
         try:
             # 获取当前价格
@@ -233,12 +240,12 @@ class MAStrategy(StrategyBase):
                 quantity = int(cash * 0.9 / current_price / 100) * 100  # 整百股
 
                 if quantity >= 100:
-                    return {
+                    return {{
                         'action': 'buy',
                         'symbol': symbol,
                         'quantity': quantity,
                         'price': current_price
-                    }
+                    }}
 
             # 死叉卖出信号
             elif (self.prev_short_ma is not None and
@@ -247,14 +254,14 @@ class MAStrategy(StrategyBase):
                   short_ma < long_ma and
                   context.get_position(symbol) > 0):
 
-                # 卖出全部持仓
+                # 卖出全部持仓（注意：quantity必须是正数）
                 position = context.get_position(symbol)
-                return {
+                return {{
                     'action': 'sell',
                     'symbol': symbol,
-                    'quantity': -position,
+                    'quantity': position,  # 正数，表示卖出position股
                     'price': current_price
-                }
+                }}
 
             # 更新前一根K线的均线值
             self.prev_short_ma = short_ma
@@ -272,9 +279,10 @@ class MAStrategy(StrategyBase):
 2. 继承StrategyBase的类定义
 3. 完整的on_bar方法实现，带正确的类型注解
 4. 适当的错误处理和边界条件检查
-5. 合理的交易逻辑
+5. 合理的交易逻辑（注意：示例中的symbol变量应使用实际回测的股票代码）
 """
 
+        prompt += example_code
         return prompt
 
     def _validate_code(self, code: str) -> str:

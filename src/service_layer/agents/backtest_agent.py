@@ -1,12 +1,19 @@
 """
 BacktestAgent - 回测执行Agent
 
-负责执行回测、计算绩效指标
+负责执行回测、计算绩效指标（使用C++引擎）
 """
 
 from typing import Dict, Any, Optional, List
+import sys
+from pathlib import Path
 
-from ..strategy import PythonBacktestEngine, BacktestResult
+# 添加C++引擎路径
+project_root = Path(__file__).parent.parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from src.cpp_engine.python.cpp_engine import CppBacktestEngine
 
 
 class BacktestAgent:
@@ -15,7 +22,7 @@ class BacktestAgent:
 
     职责：
     - 加载策略代码
-    - 执行回测
+    - 执行回测（使用C++引擎）
     - 计算绩效指标
     - 返回格式化结果
     """
@@ -25,7 +32,7 @@ class BacktestAgent:
         self.name = "backtest_agent"
         self.engine = None
         self.strategy = None
-        print(f"✅ BacktestAgent 初始化完成")
+        print(f"✅ BacktestAgent 初始化完成（使用C++引擎）")
 
     def run_backtest(self,
                     strategy_code: str,
@@ -41,7 +48,7 @@ class BacktestAgent:
             data: K线数据列表
             initial_capital: 初始资金（默认100万）
             commission_rate: 手续费率（默认0.03%）
-            slippage_rate: 滑点率（默认0.01%）
+            slippage_rate: 滑点率（暂未实现，C++引擎忽略此参数）
 
         Returns:
             {
@@ -52,7 +59,7 @@ class BacktestAgent:
             }
         """
         try:
-            print(f"\n⚙️  开始执行回测...")
+            print(f"\n⚙️  开始执行回测（C++引擎）...")
             print(f"📊 数据量: {len(data)} 根K线")
 
             # ========== 步骤1: 加载策略代码 ==========
@@ -65,31 +72,60 @@ class BacktestAgent:
 
             print("✅ 策略代码加载完成")
 
-            # ========== 步骤2: 创建回测引擎 ==========
-            self.engine = PythonBacktestEngine(
+            # ========== 步骤2: 创建C++回测引擎 ==========
+            self.engine = CppBacktestEngine(
                 initial_capital=initial_capital,
-                commission_rate=commission_rate,
-                slippage_rate=slippage_rate
+                commission_rate=commission_rate
             )
 
             # ========== 步骤3: 注册并初始化 ==========
             self.engine.register_strategy(strategy)
             self.engine.init(data)
 
-            print("✅ 回测引擎初始化完成")
+            print("✅ C++回测引擎初始化完成")
 
             # ========== 步骤4: 执行回测 ==========
-            result = self.engine.run()
+            result = self.engine.run_backtest()
 
             # ========== 步骤5: 格式化结果 ==========
             summary = self._format_summary(result)
 
             print(f"✅ 回测执行完成")
-            print(f"\n{summary}")
+
+            # 将C++的BacktestResult转换为字典（C++返回的对象没有to_dict方法）
+            result_dict = {
+                'total_return': result.total_return,
+                'annual_return': 0.0,  # C++引擎暂未实现
+                'sharpe_ratio': result.sharpe_ratio,
+                'max_drawdown': result.max_drawdown,
+                'win_rate': result.win_rate,
+                'total_trades': result.total_trades,
+                'avg_profit_per_trade': 0.0,  # C++引擎暂未实现
+                'profit_loss_ratio': 0.0,  # C++引擎暂未实现
+                'equity_curve': list(result.equity_curve) if hasattr(result.equity_curve, '__iter__') else [],
+                'trades': []
+            }
+
+            # 转换交易记录
+            if hasattr(result, 'trades'):
+                for trade in result.trades:
+                    result_dict['trades'].append({
+                        'symbol': trade.symbol,
+                        'action': trade.action,
+                        'quantity': trade.quantity,
+                        'price': trade.price,
+                        'date': trade.date,
+                        'commission': trade.commission,
+                        'cash_before': trade.cash_before,
+                        'cash_after': trade.cash_after,
+                        'position_before': trade.position_before,
+                        'position_after': trade.position_after,
+                        'status': trade.status
+                    })
 
             return {
                 "success": True,
-                "result": result.to_dict(),
+                "result": result_dict,
                 "summary": summary
             }
 
@@ -159,20 +195,20 @@ class BacktestAgent:
             traceback.print_exc()
             return None
 
-    def _format_summary(self, result: BacktestResult) -> str:
+    def _format_summary(self, result) -> str:
         """
         格式化回测结果摘要
+
+        Args:
+            result: C++引擎返回的BacktestResult对象
         """
         return f"""
 === 回测结果 ===
 📈 总收益率: {result.total_return:.2%}
-📅 年化收益率: {result.annual_return:.2%}
 ⚡ 夏普比率: {result.sharpe_ratio:.2f}
 📉 最大回撤: {result.max_drawdown:.2%}
 🎯 胜率: {result.win_rate:.2%}
 💹 交易次数: {result.total_trades}
-💰 平均每笔收益: {result.avg_profit_per_trade:.2f}
-📊 盈亏比: {result.profit_loss_ratio:.2f}
 ==================
 """
 
