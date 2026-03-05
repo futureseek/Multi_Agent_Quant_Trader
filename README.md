@@ -1,46 +1,128 @@
 # Multi-Agent Quant Trader: 基于 LangGraph 的多智能体协同量化交易决策与回测系统
 
+## 📋 启动准备
 
+### 1. 配置API密钥
 
-## 启动需要
-密钥都是写在文件中，所以干脆都没有添加到git推送上去，需要在config目录下创建
-api_config.json文件，写入以下内容：
+在 `config/` 目录下创建 `api_config.json` 文件：
+
 ```json
 {
-  "tushare_api": "",
+  "tushare_api": "YOUR_TUSHARE_API_TOKEN",
   "model": {
     "handler_agent":{
-      "model_name": "",
-      "api_key": "",
-      "base_url": ""
+      "model_name": "MODEL_NAME",
+      "api_key": "YOUR_API_KEY",
+      "base_url": "YOUR_BASE_URL"
     },
     "strategy_agent":{
-      "model_name": "",
-      "api_key": "",
-      "base_url": ""
+      "model_name": "MODEL_NAME",
+      "api_key": "YOUR_API_KEY",
+      "base_url": "YOUR_BASE_URL"
     },
     "data_service_agent":{
-      "model_name": "",
-      "api_key": "",
-      "base_url": ""
+      "model_name": "MODEL_NAME",
+      "api_key": "YOUR_API_KEY",
+      "base_url": "YOUR_BASE_URL"
     }
   }
 }
-
 ```
 
-## 初始化
-```shell
-# 进入scripts目录,初始化数据库
+---
+
+## 🚀 快速开始
+
+### Step 1: 创建Conda环境
+```bash
+conda create -n MAtrader python=3.10 -y
+conda activate MAtrader
+```
+
+#### Step 2: 安装Python依赖
+```bash
+# 安装Service Layer依赖（包含C++引擎所需的pybind11）
+cd src/service_layer
+pip install -r requirements.txt
+
+# 安装Web Layer依赖
+cd ../web_layer
+pip install -r requirements.txt
+```
+
+**系统依赖**（需提前安装）：
+- Ubuntu/Debian: `sudo apt-get install build-essential cmake`
+- CentOS/RHEL: `sudo yum groupinstall "Development Tools" && sudo yum install cmake`
+- macOS: `xcode-select --install && brew install cmake`
+
+#### Step 3: 编译C++回测引擎
+```bash
+cd ../cpp_engine
+mkdir -p build && cd build
+cmake ..
+make
+```
+
+**编译成功标志**：
+```
+[100%] Built target cpp_engine
+```
+
+生成文件：`src/cpp_engine/build/cpp_engine.cpython-310-x86_64-linux-gnu.so`
+
+#### Step 4: 初始化RAG数据库（可选）
+```bash
+cd ../../scripts
 python init_rag_db.py
-# 进入到service_layer 和 web_layer，根据目录下的README操作配置环境(requirement.txt)
 ```
 
-## 运行
-```shell
-# 进入src/web_layer目录,具体可以看该目录下的readme
+#### Step 5: 启动Web服务
+```bash
+cd ../web_layer
 python app.py
 ```
+
+访问：`http://localhost:5000`
+
+---
+
+## 📂 目录结构
+
+```
+Multi_Agent_Quant_Trader/
+├── config/                    # 全局配置文件
+│   ├── api_config.json       # API密钥（需手动创建）
+│   └── prompt_config.json    # Agent提示词
+├── data/                      # 数据存储目录
+│   ├── chroma_db/            # RAG向量数据库
+│   └── debug_csv/            # 调试输出CSV
+│       ├── daily_data_tool/  # 日线数据
+│       └── trader_order/     # 交易记录
+├── scripts/                   # 工具脚本
+│   └── init_rag_db.py        # RAG数据库初始化
+├── src/
+│   ├── cpp_engine/           # [C++] 高性能回测引擎
+│   │   ├── include/          # 头文件
+│   │   ├── src/              # 源文件
+│   │   ├── python/           # Python包装
+│   │   ├── tests/            # 测试用例
+│   │   └── build/            # 编译输出
+│   ├── service_layer/        # [Python] 业务逻辑层
+│   │   ├── agents/           # LangGraph智能体
+│   │   ├── rag/              # RAG检索模块
+│   │   ├── strategy/         # 策略定义
+│   │   └── tools/            # 数据工具
+│   └── web_layer/            # [Python] Web界面
+│       ├── static/           # 前端资源
+│       ├── templates/        # HTML模板
+│       └── routes/           # API路由
+├── tests/                     # 测试用例
+├── docs/                      # 设计文档
+├── README.md
+└── update.log                 # 更新日志
+```
+
+---
 
 
 
