@@ -2,7 +2,7 @@
 
 ## 📋 启动准备
 
-### 1. 配置API密钥
+### 配置API密钥
 
 在 `config/` 目录下创建 `api_config.json` 文件：
 
@@ -158,33 +158,29 @@ Multi_Agent_Quant_Trader/
 *   **结果存储**: `SQLite` 数据库，用于存储交易日志和 Agent 的思考链路（Reasoning Trace）。
 
 
-## 技术选型
+### 技术选型
 - 开发环境：WSL2+Ubuntu20.04
 - 核心语言：python3.10、C++17
 - AI框架：LangGraph
 - 数据库：ChromaDB，SQLite
 - 桥接层：pybind11
 
-## 目录结构规划 (Directory Structure)
+---
 
-```shell
-Multi-Agent-Quant-Trader/
-├── cmake/                  # CMake 构建配置
-├── config/                 # 全局配置文件 (json，包括api密钥、参数等内容)
-│   └── api_config.json     # 密钥文件
-├── stroage/                # 本地数据存储
-├── docs/                   # 设计文档与论文素材
-├── src/
-│   ├── cpp_core/           # [C++ 模块] 交易引擎核心
-│   │   ├── include/        # 头文件 (Engine.h, Portfolio.h)
-│   │   ├── src/            # 实现文件
-│   │   └── bindings/       # Pybind11 接口定义
-│   └── python_app/         # [Python 模块] 业务逻辑
-│       ├── agents/         # LangGraph 节点定义 (Analyst, Manager...)
-│       ├── rag/            # 向量检索与 News 处理
-│       └── main.py         # 系统入口
-├── tests/                  # 测试用例
-├── CMakeLists.txt          # C++ 构建脚本
-└── README.md
-└── update.log              # 更新日志
-```
+## 💡 使用效果
+
+### 1. RAG智能问答
+系统支持基于向量数据库的股票知识问答：
+
+![RAG问答](picture/RAG问答.png)
+
+### 2. 策略自动生成
+根据用户需求，LLM自动生成可执行的交易策略代码：
+
+![回测前策略生成](picture/回测前策略生成.png)
+
+### 3. 回测结果展示
+完整的回测报告，包含收益、风险、交易记录等指标：
+
+![回测结果展示](picture/回测结果展示.png)
+
