@@ -886,6 +886,108 @@ body {
     color: var(--danger-color);
 }
 
+/* ========== Tab 导航样式（锚点跳转） ========== */
+.strategy-tabs {
+    margin: 0;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--light-color);
+    padding: 0 1rem;
+}
+
+.strategy-tabs .nav-link {
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--secondary-color);
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.strategy-tabs .nav-link:hover {
+    color: var(--primary-color);
+    background: transparent;
+}
+
+.strategy-tabs .nav-link.active {
+    color: var(--primary-color);
+    background: transparent;
+    border-bottom-color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* 内容区域（全部显示，竖排布局） */
+.strategy-content {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.content-section {
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.content-section:last-child {
+    border-bottom: none;
+}
+
+/* ========== 图表容器样式 ========== */
+.charts-container {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.chart-wrapper {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.chart-header {
+    padding: 0.75rem 1rem;
+    background: var(--light-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.chart-header h6 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+/* 普通图表盒子 */
+.chart-box {
+    width: 100%;
+    height: 350px;
+    padding: 0.5rem;
+}
+
+/* 大图表盒子（更好的比例） */
+.chart-box-large {
+    width: 100%;
+    height: 500px;
+    padding: 1rem;
+}
+
+/* 静态图表盒子（固定比例，不支持交互） */
+.chart-box-static {
+    width: 100%;
+    height: 400px;
+    padding: 1rem;
+}
+
+/* 性能指标卡片区域 */
+.performance-summary {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--light-color);
+}
+
 /* 隐藏类 */
 .hidden {
     display: none !important;

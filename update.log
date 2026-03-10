@@ -378,3 +378,33 @@ src/cpp_engine/
 - Trades: 12 buy/sell cycles ✅
 
 ---
+
+## 2026-03-10
+
+### ✅ Backtest Visualization Complete
+
+**Implementation**: Tab-based layout with static returns chart
+
+### 📦 Delivered Features
+- **Tab Navigation**: Anchor-based scrolling between "策略代码" and "回测结果"
+- **Returns Chart**: Daily strategy returns line chart (V_t/V_t-1 - 1)
+  - Static plot (no zoom/pan/hover)
+  - Fixed date axis with ~10 tick labels
+  - Y-axis: Returns in percentage
+- **Hidden Results**: Backtest results section hidden until execution completes
+- **Auto-scroll**: Automatically scrolls to results after backtest finishes
+
+### 📁 Files Modified
+- `src/web_layer/templates/index.html`: Added tab navigation, single returns chart
+- `src/web_layer/static/css/main.css`: Tab styles, static chart container
+- `src/web_layer/static/js/main.js`: Anchor scrolling, Plotly static chart
+- `src/service_layer/agents/backtest_agent.py`: Added daily_returns calculation
+
+### 📊 Data Structure
+```python
+result_dict['daily_returns'] = [
+    0.0, 0.012, -0.008, ...  # (V_t / V_t-1) - 1
+]
+```
+
+---

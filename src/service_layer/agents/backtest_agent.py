@@ -103,7 +103,8 @@ class BacktestAgent:
                 'avg_profit_per_trade': 0.0,  # C++引擎暂未实现
                 'profit_loss_ratio': 0.0,  # C++引擎暂未实现
                 'equity_curve': list(result.equity_curve) if hasattr(result.equity_curve, '__iter__') else [],
-                'trades': []
+                'trades': [],
+                'price_data': []  # 新增：股价数据（用于前端可视化）
             }
 
             # 转换交易记录
@@ -122,6 +123,41 @@ class BacktestAgent:
                         'position_after': trade.position_after,
                         'status': trade.status
                     })
+
+            # 添加股价数据（用于前端可视化）
+            result_dict['price_data'] = [
+                {
+                    'date': str(bar.get('trade_date', '')),  # 确保日期是字符串
+                    'open': float(bar.get('open', 0)),
+                    'high': float(bar.get('high', 0)),
+                    'low': float(bar.get('low', 0)),
+                    'close': float(bar.get('close', 0)),
+                    'vol': float(bar.get('vol', 0))
+                }
+                for bar in data
+            ]
+
+            # 计算每日收益率序列 (V_t / V_t-1) - 1
+            equity_curve = list(result.equity_curve) if hasattr(result.equity_curve, '__iter__') else []
+            daily_returns = []
+
+            if len(equity_curve) > 0:
+                # 第一天收益率为0
+                daily_returns.append(0.0)
+
+                # 计算后续每天的收益率
+                for i in range(1, len(equity_curve)):
+                    prev_value = equity_curve[i - 1]
+                    curr_value = equity_curve[i]
+
+                    if prev_value > 0:
+                        daily_return = (curr_value / prev_value) - 1
+                    else:
+                        daily_return = 0.0
+
+                    daily_returns.append(daily_return)
+
+            result_dict['daily_returns'] = daily_returns
 
             return {
                 "success": True,

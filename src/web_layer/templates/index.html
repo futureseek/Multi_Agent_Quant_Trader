@@ -99,36 +99,49 @@
 
 <!-- 策略区域（默认隐藏） -->
 <div id="strategy-panel" class="strategy-panel hidden">
-        <div class="strategy-header">
-            <h6 class="mb-0">
-                <i class="fas fa-code me-2"></i>策略代码
-            </h6>
-            <button id="close-strategy" class="btn btn-sm btn-outline-secondary close-btn">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
+    <div class="strategy-header">
+        <h6 class="mb-0">
+            <i class="fas fa-chart-line me-2"></i>策略与回测
+        </h6>
+        <button id="close-strategy" class="btn btn-sm btn-outline-secondary close-btn">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
 
-        <!-- 代码展示区 -->
-        <div class="strategy-code-container">
-            <pre><code id="strategy-code" class="language-python"></code></pre>
-        </div>
+    <!-- Tab 导航（锚点跳转） -->
+    <ul class="nav nav-tabs strategy-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <a class="nav-link active" id="tab-code-btn" href="#section-code" role="tab">
+                <i class="fas fa-code me-1"></i>策略代码
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link" id="tab-charts-btn" href="#section-charts" role="tab">
+                <i class="fas fa-chart-bar me-1"></i>回测结果
+            </a>
+        </li>
+    </ul>
 
-        <!-- 运行回测按钮 -->
-        <div class="strategy-actions">
-            <button id="run-backtest-btn" class="btn btn-primary w-100">
-                <i class="fas fa-play me-2"></i>运行回测
-            </button>
-        </div>
-
-        <!-- 回测结果区（嵌入在策略面板下方） -->
-        <div id="backtest-result" class="backtest-result hidden">
-            <div class="result-header">
-                <h6 class="mb-0">
-                    <i class="fas fa-chart-bar me-2"></i>回测结果
-                </h6>
+    <!-- 内容区域（全部显示，竖排布局） -->
+    <div class="strategy-content">
+        <!-- 第1部分：策略代码 -->
+        <div id="section-code" class="content-section">
+            <!-- 代码展示区 -->
+            <div class="strategy-code-container">
+                <pre><code id="strategy-code" class="language-python"></code></pre>
             </div>
 
-            <!-- 结果概览 -->
+            <!-- 运行回测按钮 -->
+            <div class="strategy-actions">
+                <button id="run-backtest-btn" class="btn btn-primary w-100">
+                    <i class="fas fa-play me-2"></i>运行回测
+                </button>
+            </div>
+        </div>
+
+        <!-- 第2部分：回测结果 -->
+        <div id="section-charts" class="content-section hidden">
+            <!-- 性能指标卡片 -->
             <div id="performance-summary" class="performance-summary">
                 <div class="row g-2">
                     <div class="col-6">
@@ -158,6 +171,17 @@
                 </div>
             </div>
 
+            <!-- 图表容器 -->
+            <div class="charts-container">
+                <!-- 策略收益率折线图 -->
+                <div class="chart-wrapper">
+                    <div class="chart-header">
+                        <h6 class="mb-0"><i class="fas fa-chart-line me-2"></i>策略每日收益率</h6>
+                    </div>
+                    <div id="returns-chart" class="chart-box chart-box-static"></div>
+                </div>
+            </div>
+
             <!-- 交易记录 -->
             <div class="trades-list">
                 <h6 class="text-muted small mb-2">交易记录</h6>
@@ -175,5 +199,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+<!-- Plotly.js for interactive charts -->
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 {% endblock %}

@@ -97,6 +97,29 @@ class QuantTraderApp {
             this.runBacktest();
         });
 
+        // Tab锚点平滑滚动
+        document.querySelectorAll('.strategy-tabs .nav-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = link.getAttribute('href');
+                const targetElement = document.querySelector(targetId);
+
+                if (targetElement) {
+                    // 更新active状态
+                    document.querySelectorAll('.strategy-tabs .nav-link').forEach(l => {
+                        l.classList.remove('active');
+                    });
+                    link.classList.add('active');
+
+                    // 平滑滚动到目标
+                    targetElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
         // 拖动分隔条调整布局
         this.initResizer();
     }
@@ -787,13 +810,13 @@ class QuantTraderApp {
     displayBacktestResult(result) {
         console.log('📊 显示回测结果', result);
 
-        // 显示结果区域
-        const backtestResult = document.getElementById('backtest-result');
-        if (backtestResult) {
-            backtestResult.classList.remove('hidden');
+        // 显示回测结果区域（移除hidden类）
+        const resultsSection = document.getElementById('section-charts');
+        if (resultsSection) {
+            resultsSection.classList.remove('hidden');
         }
 
-        // 更新指标
+        // 更新性能指标
         if (result.total_return !== undefined) {
             const totalReturnEl = document.getElementById('total-return');
             if (totalReturnEl) {
@@ -822,32 +845,131 @@ class QuantTraderApp {
             }
         }
 
+        // 生成图表
+        this.renderCharts(result);
+
         // 显示交易记录
-        const tradesContainer = document.getElementById('trades-container');
-        if (tradesContainer && result.trades) {
-            tradesContainer.innerHTML = '';
+        this.renderTrades(result.trades);
 
-            if (result.trades.length === 0) {
-                tradesContainer.innerHTML = '<div class="text-center text-muted small">无交易记录</div>';
-            } else {
-                result.trades.forEach(trade => {
-                    const tradeEl = document.createElement('div');
-                    tradeEl.className = `trade-item trade-${trade.action}`;
+        // 自动滚动到回测结果区域
+        this.scrollToResults();
+    }
 
-                    const actionText = trade.action === 'buy' ? '买入' : '卖出';
-                    const timeText = trade.time || '--';
+    // 渲染图表
+    renderCharts(result) {
+        // 生成策略收益率折线图
+        this.renderReturnsChart(result);
+    }
 
-                    tradeEl.innerHTML = `
-                        <div class="trade-time">${timeText}</div>
-                        <div class="trade-action">${actionText} ${trade.symbol || ''}</div>
-                        <div>价格: ¥${trade.price?.toFixed(2) || '--'}</div>
-                        <div>数量: ${trade.quantity || '--'}</div>
-                        ${trade.profit !== undefined ? `<div>收益: ¥${trade.profit.toFixed(2)}</div>` : ''}
-                    `;
+    // 策略收益率折线图（静态，不支持交互）
+    renderReturnsChart(result) {
+        const dailyReturns = result.daily_returns || [];
+        const priceData = result.price_data || [];
 
-                    tradesContainer.appendChild(tradeEl);
-                });
+        if (dailyReturns.length === 0) {
+            console.warn('⚠️ 无收益率数据，跳过图表渲染');
+            return;
+        }
+
+        // 获取日期（需要与收益率序列匹配）
+        const dates = priceData.map(d => d.date).slice(-dailyReturns.length);
+
+        // 创建零线（区分正负收益）
+        const zeroLine = Array(dailyReturns.length).fill(0);
+
+        const trace = {
+            x: dates,
+            y: dailyReturns.map(r => r * 100),  // 转为百分比
+            type: 'scatter',
+            mode: 'lines',
+            name: '收益率',
+            line: {
+                color: '#2196F3',
+                width: 2
             }
+        };
+
+        const layout = {
+            title: false,
+            xaxis: {
+                title: '日期',
+                type: 'category',  // 指定为分类数据（字符串），而非数值
+                tickmode: 'auto',  // 自动选择显示的标签
+                nticks: 10,        // 最多显示10个日期标签
+                tickangle: -45,    // 倾斜45度避免重叠
+                tickfont: { size: 11 },  // 字体大小
+                automargin: true
+            },
+            yaxis: {
+                title: '收益率 (%)',
+                automargin: true,
+                zeroline: true,
+                zerolinecolor: '#999',
+                zerolinewidth: 1
+            },
+            margin: { l: 80, r: 40, t: 20, b: 80 },
+            hovermode: false,
+            autosize: true,
+            showlegend: false
+        };
+
+        const config = {
+            responsive: true,
+            displayModeBar: false,  // 关闭工具栏
+            staticPlot: true       // 静态图表，不支持交互
+        };
+
+        Plotly.newPlot('returns-chart', [trace], layout, config);
+    }
+
+    // 渲染交易记录
+    renderTrades(trades) {
+        const tradesContainer = document.getElementById('trades-container');
+        if (!tradesContainer) return;
+
+        tradesContainer.innerHTML = '';
+
+        if (!trades || trades.length === 0) {
+            tradesContainer.innerHTML = '<div class="text-center text-muted small">无交易记录</div>';
+            return;
+        }
+
+        trades.forEach(trade => {
+            const tradeEl = document.createElement('div');
+            tradeEl.className = `trade-item trade-${trade.action}`;
+
+            const actionText = trade.action === 'buy' ? '买入' : '卖出';
+            const dateText = trade.date || '--';
+
+            tradeEl.innerHTML = `
+                <div class="trade-time">${dateText}</div>
+                <div class="trade-action">${actionText} ${trade.symbol || ''}</div>
+                <div>价格: ¥${trade.price?.toFixed(2) || '--'}</div>
+                <div>数量: ${trade.quantity || '--'}</div>
+                <div class="small text-muted">状态: ${trade.status || '--'}</div>
+            `;
+
+            tradesContainer.appendChild(tradeEl);
+        });
+    }
+
+    // 滚动到回测结果区域
+    scrollToResults() {
+        const chartsTabBtn = document.getElementById('tab-charts-btn');
+        const resultsSection = document.getElementById('section-charts');
+
+        if (chartsTabBtn && resultsSection) {
+            // 更新Tab active状态
+            document.querySelectorAll('.strategy-tabs .nav-link').forEach(l => {
+                l.classList.remove('active');
+            });
+            chartsTabBtn.classList.add('active');
+
+            // 平滑滚动到结果区域
+            resultsSection.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
         }
     }
 }
