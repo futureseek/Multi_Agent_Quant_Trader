@@ -70,10 +70,11 @@ make
 
 生成文件：`src/cpp_engine/build/cpp_engine.cpython-310-x86_64-linux-gnu.so`
 
-#### Step 4: 初始化RAG数据库（可选）
+#### Step 4: 初始化RAG数据库和新闻数据（可选）
 ```bash
 cd ../../scripts
-python init_rag_db.py
+python init_rag_db.py        # 初始化股票基本信息和财务数据
+python crawl_news.py 500     # 爬取最新新闻公告并自动向量化
 ```
 
 #### Step 5: 启动Web服务
@@ -98,8 +99,10 @@ Multi_Agent_Quant_Trader/
 │   └── debug_csv/            # 调试输出CSV
 │       ├── daily_data_tool/  # 日线数据
 │       └── trader_order/     # 交易记录
-├── scripts/                   # 工具脚本
-│   └── init_rag_db.py        # RAG数据库初始化
+├── scripts/                   # 工具脚本（数据初始化与更新）
+│   ├── init_rag_db.py        # RAG数据库初始化（股票基本信息+财务数据）
+│   ├── crawl_news.py         # 新闻爬虫（自动向量化到ChromaDB）
+│   └── build_stock_map.py    # 股票映射表生成（首次使用）
 ├── src/
 │   ├── cpp_engine/           # [C++] 高性能回测引擎
 │   │   ├── include/          # 头文件

@@ -164,7 +164,7 @@ class HandlerAgent:
             user_input = state["user_input"].lower()
 
             # RAG查询关键词（优先级最高，统一入口）
-            rag_keywords = ["选股", "筛选", "找", "推荐", "什么是", "主营", "业务", "介绍", "哪些", "市值", "市盈率", "市净率"]
+            rag_keywords = ["选股", "筛选", "找", "推荐", "什么是", "主营", "业务", "介绍", "哪些", "市值", "市盈率", "市净率", "公告", "新闻", "资讯", "最新", "最近"]
             if any(keyword in user_input for keyword in rag_keywords):
                 intent = "rag_query"
             elif any(keyword in user_input for keyword in ["回测", "策略", "收益", "夏普", "绩效"]):
