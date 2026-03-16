@@ -40,6 +40,16 @@ class StockVectorStore:
         self.embedder = SentenceTransformer(embedding_model)
         print("✅ Embedding模型加载完成")
 
+        # 初始化Reranker（直接启用）
+        try:
+            from .reranker import BGEReranker
+            self.reranker = BGEReranker()
+            self.enable_reranker = self.reranker.is_available()
+        except Exception as e:
+            print(f"⚠️ Reranker初始化失败: {e}")
+            self.reranker = None
+            self.enable_reranker = False
+
         # 创建多个collection（分类存储）
         self.collections = {}
         collection_names = [
@@ -139,12 +149,12 @@ class StockVectorStore:
         filter_metadata: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
-        跨collection检索
+        跨collection检索（集成Reranker重排序）
 
         Args:
             query: 查询文本
             collection_names: 指定检索的collection列表，None表示全部
-            top_k: 每个collection返回的结果数
+            top_k: 返回的结果数
             filter_metadata: 元数据过滤条件
 
         Returns:
@@ -163,10 +173,16 @@ class StockVectorStore:
                 continue
 
             try:
-                # 查询collection
+                # 查询collection（召回更多候选，为重排序做准备）
+                # 设定召回上限，避免过度召回
+                if self.enable_reranker:
+                    recall_k = min(top_k * 3, 50)  # 最多召回50个/collection
+                else:
+                    recall_k = top_k
+
                 results = self.collections[name].query(
                     query_embeddings=query_embedding,
-                    n_results=top_k,
+                    n_results=recall_k,
                     where=filter_metadata
                 )
 
@@ -187,9 +203,13 @@ class StockVectorStore:
         # 按距离排序（升序）
         all_results.sort(key=lambda x: x["distance"])
 
-        print(f"🔍 检索完成，共找到 {len(all_results)} 个结果")
+        print(f"🔍 向量检索完成，召回 {len(all_results)} 个候选")
 
-        return all_results[:top_k * len(collection_names)]
+        # Reranker重排序
+        if self.enable_reranker and self.reranker and len(all_results) > 0:
+            all_results = self.reranker.rerank(query, all_results, top_k)
+
+        return all_results[:top_k]
 
     def get_collection_stats(self, collection_name: str) -> Dict[str, Any]:
         """

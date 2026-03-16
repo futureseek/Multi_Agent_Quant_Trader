@@ -67,7 +67,7 @@ class RAGQueryAgent:
             search_results = self.vector_store.search(
                 query=search_query,  # 使用改写后的查询
                 collection_names=None,  # 全部collection
-                top_k=top_k * 3  # 多检索一些给LLM筛选
+                top_k=top_k
             )
 
             if not search_results:
