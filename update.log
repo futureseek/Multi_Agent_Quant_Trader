@@ -445,3 +445,33 @@ result_dict['daily_returns'] = [
 - **无幻觉防护**：RAG未验证检索结果是否匹配用户查询的股票
 
 ---
+
+## 2026-03-16
+
+### ✅ 已完成
+- **HandlerAgent路由机制重构**：从纯关键词匹配升级为混合决策系统
+  - 关键词打分机制：多关键词累计得分，取代优先级匹配
+  - LLM意图分析：使用handler_agent的LLM进行语义理解
+  - 决策融合逻辑：关键词无匹配时用LLM，有匹配时LLM优先
+  - 兜底策略：LLM分析失败时fallback到general_question
+
+### 🔧 技术实现
+**文件修改**：`src/service_layer/agents/handler_agent.py`
+- 新增 `intent_keywords` 配置：4类意图的关键词列表
+- 新增 `_score_by_keywords` 方法：关键词打分
+- 新增 `_llm_intent_analysis` 方法：LLM意图分析
+- 新增 `_intent_to_chinese` 方法：意图转中文
+- 重构 `_analyze_intent_node` 节点：混合决策核心逻辑
+
+**决策流程**：
+```
+用户输入 → 关键词打分（第1半） → LLM分析（第2半） → 决策融合
+```
+
+**分支结构**（4个）：
+1. rag_query - 知识库查询
+2. backtest_request - 策略回测
+3. data_analysis - 数据分析（投资/风险/数据）
+4. general_question - 通用问题（兜底）
+
+---

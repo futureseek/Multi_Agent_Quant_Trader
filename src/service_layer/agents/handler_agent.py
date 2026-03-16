@@ -18,6 +18,7 @@ from .message_manager import MessageManager
 from .data_service_agent import data_service_agent
 from .strategy_agent import strategy_agent
 from .backtest_agent import backtest_agent
+import json
 
 class AgentState(TypedDict):
     """Agent状态定义"""
@@ -69,6 +70,23 @@ class HandlerAgent:
         # 初始化RAG组件（懒加载，避免启动时初始化失败）
         self.rag_query_agent = None
         self.vector_store = None
+
+        # 关键词打分配置（用于意图识别）
+        self.intent_keywords = {
+            "rag_query": [
+                "选股", "筛选", "找", "推荐", "什么是", "主营",
+                "业务", "介绍", "哪些", "市值", "市盈率", "市净率",
+                "公告", "新闻", "资讯", "最新", "最近"
+            ],
+            "backtest_request": [
+                "回测", "策略", "收益", "夏普", "绩效", "测试"
+            ],
+            "data_analysis": [
+                "股票", "投资", "分析", "风险", "回撤",
+                "波动", "数据"
+            ],
+            "general_question": []  # 兜底，无关键词
+        }
 
         self.graph = self._build_graph()
         print(f"✅ HandlerAgent 初始化完成 - 模型: {agent_config['model_name']}")
@@ -154,32 +172,38 @@ class HandlerAgent:
             return state
     
     async def _analyze_intent_node(self, state: AgentState) -> AgentState:
-        """意图分析节点"""
+        """意图分析节点 - 混合决策（关键词打分 + LLM）"""
         try:
             print("🧠 分析用户意图...")
             state["current_step"] = "analyzing_intent"
 
-            # 这里可以添加更复杂的意图分析逻辑
-            # 目前先做简单的关键词分析
-            user_input = state["user_input"].lower()
+            user_input = state["user_input"]
 
-            # RAG查询关键词（优先级最高，统一入口）
-            rag_keywords = ["选股", "筛选", "找", "推荐", "什么是", "主营", "业务", "介绍", "哪些", "市值", "市盈率", "市净率", "公告", "新闻", "资讯", "最新", "最近"]
-            if any(keyword in user_input for keyword in rag_keywords):
-                intent = "rag_query"
-            elif any(keyword in user_input for keyword in ["回测", "策略", "收益", "夏普", "绩效"]):
-                intent = "backtest_request"
-            elif any(keyword in user_input for keyword in ["股票", "投资", "分析"]):
-                intent = "investment_analysis"
-            elif any(keyword in user_input for keyword in ["风险", "回撤", "波动"]):
-                intent = "risk_analysis"
-            elif any(keyword in user_input for keyword in ["数据"]):
-                intent = "data_analysis"
+            # === 第1半：关键词打分 ===
+            keyword_scores = self._score_by_keywords(user_input)
+            keyword_intent = max(keyword_scores, key=keyword_scores.get)
+            keyword_score = keyword_scores[keyword_intent]
+
+            print(f"📊 关键词打分: {keyword_scores}")
+            print(f"🎯 关键词决策: {keyword_intent} (得分: {keyword_score})")
+
+            # === 第2半：LLM决策 ===
+            llm_result = await self._llm_intent_analysis(user_input)
+            llm_intent = llm_result["intent"]
+            llm_confidence = llm_result.get("confidence", 0.0)
+
+            print(f"🤖 LLM决策: {llm_intent} (置信度: {llm_confidence:.2f})")
+
+            # === 决策融合 ===
+            if keyword_score == 0:
+                # 关键词无匹配，使用LLM决策（包括general_question兜底）
+                state["analysis_result"] = llm_intent
+                print(f"✅ 关键词无匹配，使用LLM决策: {llm_intent}")
             else:
-                intent = "general_question"
+                # 关键词有匹配，优先使用LLM决策
+                state["analysis_result"] = llm_intent
+                print(f"✅ 使用LLM决策: {llm_intent}（关键词得分: {keyword_score}）")
 
-            state["analysis_result"] = intent
-            print(f"🎯 识别意图: {intent}")
 
             return state
 
@@ -943,6 +967,103 @@ class HandlerAgent:
                     "agent": "handler_agent"
                 }
             }
+
+    def _score_by_keywords(self, user_input: str) -> Dict[str, int]:
+        """
+        关键词打分方法
+
+        Args:
+            user_input: 用户输入
+
+        Returns:
+            各意图的得分字典
+        """
+        scores = {intent: 0 for intent in self.intent_keywords.keys()}
+        user_input_lower = user_input.lower()
+
+        for intent, keywords in self.intent_keywords.items():
+            for keyword in keywords:
+                if keyword in user_input_lower:
+                    scores[intent] += 1
+
+        return scores
+
+    async def _llm_intent_analysis(self, user_input: str) -> Dict[str, Any]:
+        """
+        LLM意图分析
+
+        Args:
+            user_input: 用户输入
+
+        Returns:
+            {"intent": str, "confidence": float, "reasoning": str}
+        """
+        prompt = f"""你是路由决策专家。根据用户问题，选择最合适的分支。
+
+用户问题：{user_input}
+
+分支说明：
+1. rag_query - 知识库查询（选股、公司介绍、公告查询）
+   示例："平安银行最近有什么公告"、"找市盈率小于20的股票"
+
+2. backtest_request - 策略回测（策略生成、回测执行）
+   示例："回测平安银行"、"测试双均线策略"
+
+3. data_analysis - 数据获取+AI分析（投资分析、风险分析、数据分析）
+   示例："分析平安银行"、"评估投资风险"
+
+4. general_question - 通用问题（问候、理论解释等）
+   示例："你好"、"什么是夏普比率"
+
+返回JSON格式（只返回JSON，不要其他内容）：
+{{
+    "intent": "分支名称",
+    "confidence": 0.95,
+    "reasoning": "判断理由"
+}}
+"""
+
+        try:
+            response = await self.llm.ainvoke(prompt)
+            content = response.content
+
+            # 提取JSON
+            if "```json" in content:
+                json_str = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                json_str = content.split("```")[1].split("```")[0].strip()
+            else:
+                json_str = content.strip()
+
+            result = json.loads(json_str)
+            return result
+
+        except Exception as e:
+            print(f"⚠️ LLM意图分析失败: {e}")
+            # 降级：返回general_question
+            return {
+                "intent": "general_question",
+                "confidence": 0.0,
+                "reasoning": "LLM分析失败，使用兜底策略"
+            }
+
+    def _intent_to_chinese(self, intent: str) -> str:
+        """
+        将意图转换为中文显示
+
+        Args:
+            intent: 意图类型
+
+        Returns:
+            中文描述
+        """
+        intent_map = {
+            "rag_query": "知识库查询",
+            "backtest_request": "策略回测",
+            "data_analysis": "数据分析",
+            "general_question": "通用问题"
+        }
+        return intent_map.get(intent, intent)
 
     def _init_rag_component(self):
         """初始化RAG组件（懒加载）"""
